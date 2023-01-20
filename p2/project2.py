@@ -98,7 +98,7 @@ class Token:
     BEGIN = 150  # {
     MAIN = 200  # computation
     EOF = 255  # end of file
-    
+
     SYMBOLS = {
         "*": TIMES,
         "/": DIV,
@@ -152,11 +152,11 @@ class Token:
     def __str__(self) -> str:
         return f"{self.sym} (type: {self.type}) <{self.file}:{self.line}:{self.col}>"
 
+
 class Tokenizer:
     def __init__(self, file: str):
-        self.code = ""
         self.file = file
-        self.fileReader = None
+        self.fileReader = FileReader(self.file)
 
         # States
         self.is_error = False
@@ -169,16 +169,12 @@ class Tokenizer:
         self.ids = {}  # identifier: identifier id
         self.names = {}  # identifier id: identifier
 
-        self.open()
         self.next()  # Read the first char
         self.clear_white_space()
 
     def error(self, error_msg: str) -> None:
         self.is_error = True
         print(f"Tokenizer error: {error_msg}", file=sys.stderr)
-
-    def open(self) -> None:
-        self.fileReader = FileReader(self.file)
 
     def next(self) -> None:
         if self.is_error:
@@ -266,7 +262,7 @@ class Tokenizer:
         # Consume following white spaces. Prepare for parsing the next token.
         self.clear_white_space()
 
-        token.sym  = sym
+        token.sym = sym
         if sym in Token.RESERVED_WORDS:
             token.type = Token.RESERVED_WORDS[sym]
         else:
@@ -314,118 +310,129 @@ class Tokenizer:
         return token
 
     def getNext(self) -> Token:
-        if self.is_error:
+        if self.is_error or self.inputSym == FileReader.ERROR:
             token = self.create_token()
             token.type = Token.ERROR
             return token
-
-        if self.is_digit():
+        elif self.inputSym == FileReader.EOF:
+            token = self.create_token()
+            token.type = Token.EOF
+            return token
+        elif self.is_digit():
             return self.number()
         elif self.is_letter():
             return self.identifier()
         else:
             return self.operator()
 
-class Project2:
-    def __init__(self, tokenizer: Tokenizer):
-        self.tokenizer = tokenizer
 
-    def sym(self) -> str:
-        return self.tokenizer.sym()
+class Interpreter:
+    def __init__(self, file: str):
+        self.file = file
+        self.tokenizer = Tokenizer(self.file)
+        self.inputSym = None
+        # Mapping of identifiers (int) and their value (float or int)
+        self.identifiers = {}
 
-    def is_white_space(self) -> bool:
-        return self.tokenizer.is_white_space()
+        # Read the first token
+        self.next()
 
     def next(self) -> None:
-        self.tokenizer.next()
+        self.inputSym = self.tokenizer.getNext()
 
-    def clear_white_space(self) -> None:
-        while self.is_white_space():
-            self.tokenizer.next()
-
-    def is_digit(self) -> bool:
-        return self.tokenizer.is_digit()
-
-    def number(self) -> int:
-        result = 0
-        while self.is_digit():
-            result = result * 10 + int(self.sym())
+    def factor(self):  # Return an int or a float
+        if self.inputSym.type == Token.IDENT:
+            id = self.tokenizer.id
+            assert id in self.identifiers, f"Uninitalized variable {self.inputSym.sym}"
             self.next()
-        self.clear_white_space()
-        return result
+            return self.identifiers[id]
 
-    def factor(self) -> int:
-        if self.is_digit():
-            return self.number()
-        elif self.sym() == "(":
+        elif self.inputSym.type == Token.NUMBER:
+            num = self.tokenizer.num
             self.next()
-            self.clear_white_space()
+            return num
+
+        elif self.inputSym.type == Token.OPENPAREN:
+            self.next()
             result = self.expression()
-            assert self.sym() == ")", "unmatched parentheses in factor!"
+            assert self.inputSym.type == Token.CLOSEPAREN, "Unmatched parentheses in factor!"
             self.next()
-            self.clear_white_space()
             return result
-        else:
-            assert False, f"factor starts with unexpected symbol \"{self.sym()}\""
 
-    def term(self) -> int:
+        else:
+            assert False, f"Factor starts with unexpected token {self.inputSym}"
+
+    def term(self):  # Return an int or a float
         result = self.factor()
 
         while True:
-            if self.sym() == "*":
+            if self.inputSym.type == Token.TIMES:
                 self.next()
-                self.clear_white_space()
                 result *= self.factor()
-            elif self.sym() == "/":
+            elif self.inputSym.type == Token.DIV:
                 self.next()
-                self.clear_white_space()
                 result /= self.factor()
             else:
                 return result
 
-    def expression(self) -> int:
+    def expression(self):  # Return an int or a float
         result = self.term()
 
         while True:
-            if self.sym() == "+":
+            if self.inputSym.type == Token.PLUS:
                 self.next()
-                self.clear_white_space()
                 result += self.term()
-            elif self.sym() == "-":
+            elif self.inputSym.type == Token.MINUS:
                 self.next()
-                self.clear_white_space()
                 result -= self.term()
             else:
                 return result
 
-    def computation(self) -> int:
-        self.clear_white_space()
-        result = self.expression()
-        while self.is_white_space():
-            self.next()
-        assert self.sym() == ".", "computation doesn't end with \".\"!"
+    def assignment(self) -> None:
+        assert self.inputSym.type == Token.VAR, "Expecting keyword " \
+            f"\"var\", found {self.inputSym}"
         self.next()
+
+        assert self.inputSym.type == Token.IDENT, "Expecting variable " \
+            f"name after keyword var, found {self.inputSym}"
+        id = self.tokenizer.id
+        self.next()
+
+        assert self.inputSym.type == Token.BECOMES, "Expecting \"<-\" " \
+            f"after variable name, found {self.inputSym}"
+        self.next()
+
+        val = self.expression()
+
+        self.identifiers[id] = val
+
+        assert self.inputSym.type == Token.SEMI, "Expecting \";\" " \
+            f"at the end of variable assignment, found {self.inputSym}"
+        self.next()
+
+    def computation(self):  # Return an int or a float
+        assert self.inputSym.type == Token.MAIN, "Expecting \"computation\" " \
+            f"at the start of computation, found {self.inputSym}"
+        self.next()
+
+        while self.inputSym.type == Token.VAR:
+            self.assignment()
+
+        while True:
+            result = self.expression()
+            print(result)
+
+            if self.inputSym.type != Token.SEMI:
+                break
+            self.next()
+
+        assert self.inputSym.type == Token.PERIOD, "Expecting \".\" at the " \
+            f"end of computation, found {self.inputSym}"
+        self.next()
+
         return result
 
 
 if __name__ == "__main__":
-
-    with open("input.txt", "r") as f:
-        code = f.read()
-        print(f"reading code: {code}")
-
-    with open("answers.txt", "r") as f:
-        answers = f.read().split()
-    ans_idx = 0
-
-    t = Tokenizer(code)
-    p = Project2(t)
-    print(f"results:")
-    while not t.end():
-        result = p.computation()
-        print(f"\t{result} ", end="")
-        if ans_idx < len(answers) and result == int(answers[ans_idx]):
-            print("[correct]")
-        else:
-            print("[wrong]")
-        ans_idx += 1
+    interpreter = Interpreter("input.txt")
+    interpreter.computation()

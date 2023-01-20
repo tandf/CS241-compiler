@@ -6,8 +6,9 @@ import io
 import sys
 import tempfile
 
-class TestProject2(unittest.TestCase):
-    def test_codeiter(self):
+
+class TestFileReader(unittest.TestCase):
+    def test_filereader(self):
         code = "i - 5"
         with tempfile.NamedTemporaryFile() as tmp:
             file_name = tmp.name
@@ -53,6 +54,8 @@ class TestProject2(unittest.TestCase):
         self.assertEqual(reader.getNext(), FileReader.ERROR)
         self.assertEqual(reader.idx, 5)
 
+
+class TestTokennizer(unittest.TestCase):
     def test_tokenizer_id_table(self):
         # Test identifier table related functions
         t = Tokenizer("")
@@ -73,7 +76,7 @@ class TestProject2(unittest.TestCase):
         self.assertEqual(sys.stderr.getvalue(),
                          f"Tokenizer error: Trying to add identifier {n2} for "
                          "the second time!\n")
-        self.assertEqual(t.is_error, True)
+        self.assertTrue(t.is_error)
         self.assertEqual(t.getNext().type, Token.ERROR)
 
     def test_tokenizer(self):
@@ -105,7 +108,11 @@ class TestProject2(unittest.TestCase):
         self.assertEqual(tokenizer.num, 15)
 
     def test_tokenizer_multiline(self):
-        code = "var1 <- 32 ;\n var2 <-15; var1 - var2;\n."
+        code = """var1 <- 32 ;
+ var2 <-15; var1 - var2;
+.
+"""
+
         with tempfile.NamedTemporaryFile() as tmp:
             with open(tmp.name, "w") as f:
                 f.write(code)
@@ -182,6 +189,96 @@ class TestProject2(unittest.TestCase):
         self.assertEqual((token.line, token.col), (3, 1))
         self.assertEqual(token.type, Token.PERIOD)
         self.assertEqual(token.sym, ".")
+
+
+class TestInterpreter(unittest.TestCase):
+    def test_number(self):
+        code = "1234 "
+        with tempfile.NamedTemporaryFile() as tmp:
+            with open(tmp.name, "w") as f:
+                f.write(code)
+            interpreter = Interpreter(tmp.name)
+        self.assertEqual(interpreter.tokenizer.fileReader.code, code)
+        self.assertEqual(interpreter.factor(), 1234)
+
+        code = "(13) "
+        with tempfile.NamedTemporaryFile() as tmp:
+            with open(tmp.name, "w") as f:
+                f.write(code)
+            interpreter = Interpreter(tmp.name)
+        self.assertEqual(interpreter.tokenizer.fileReader.code, code)
+        self.assertEqual(interpreter.factor(), 13)
+
+    def test_term(self):
+        code = "33 * 3 / 11 "
+        with tempfile.NamedTemporaryFile() as tmp:
+            with open(tmp.name, "w") as f:
+                f.write(code)
+            interpreter = Interpreter(tmp.name)
+        self.assertEqual(interpreter.tokenizer.fileReader.code, code)
+        self.assertEqual(interpreter.term(), 9)
+
+    def test_expression(self):
+        code = "1 + 3 ;"
+        with tempfile.NamedTemporaryFile() as tmp:
+            with open(tmp.name, "w") as f:
+                f.write(code)
+            interpreter = Interpreter(tmp.name)
+        self.assertEqual(interpreter.tokenizer.fileReader.code, code)
+        self.assertEqual(interpreter.expression(), 4)
+
+    def test_assignment(self):
+        code = "var var1 <- 32 ;"
+        with tempfile.NamedTemporaryFile() as tmp:
+            with open(tmp.name, "w") as f:
+                f.write(code)
+            interpreter = Interpreter(tmp.name)
+        self.assertEqual(interpreter.tokenizer.fileReader.code, code)
+
+        interpreter.assignment()
+        self.assertEqual(len(interpreter.identifiers), 1)
+        id = interpreter.tokenizer.string2id("var1")
+        self.assertEqual(interpreter.identifiers[id], 32)
+
+    def compute(self, code: str):
+        with tempfile.NamedTemporaryFile() as tmp:
+            with open(tmp.name, "w") as f:
+                f.write(code)
+            interpreter = Interpreter(tmp.name)
+        self.assertEqual(interpreter.tokenizer.fileReader.code, code)
+
+        sys.stdout = io.StringIO()
+        interpreter.computation()
+        return sys.stdout.getvalue()
+
+    def test_computation(self):
+        code = """computation
+        var var1 <- 32 ;
+        var var2 <-15;
+        var1 - var2;
+        var1+var2.
+        """
+        self.assertEqual(self.compute(code), "17\n47\n")
+
+        code = """computation
+        var var1 <- 32 ;
+        var var2 <- var1 - 15;
+        var1 - var2;
+        var1+var2.
+        """
+        self.assertEqual(self.compute(code), "15\n49\n")
+
+        code = """computation
+        var var1 <- 4 ;
+        var var2 <- var1 - 2;
+        var var1 <- 3;
+        var asdf <- 1;
+        var1 - var2;
+        var1*var2;
+        asdf + var1 + var2.
+        """
+        self.assertEqual(self.compute(code), "1\n6\n6\n")
+
 
 if __name__ == "__main__":
     unittest.main()
