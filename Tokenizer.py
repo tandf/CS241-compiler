@@ -98,6 +98,52 @@ class Token:
     BEGIN = 150  # {
     MAIN = 200  # computation
     EOF = 255  # end of file
+    
+    # relOp = "==" | "!=" | "<" | "<=" | ">" | ">="
+    RELOPS = [EQL, NEQ, LSS, GEQ, LEQ, GTR]
+
+    TokenName = {
+        ERROR: "ERROR",
+        TIMES: "TIMES",
+        DIV: "DIV",
+        PLUS: "PLUS",
+        MINUS: "MINUS",
+        EQL: "EQL",
+        NEQ: "NEQ",
+        LSS: "LSS",
+        GEQ: "GEQ",
+        LEQ: "LEQ",
+        GTR: "GTR",
+        PERIOD: "PERIOD",
+        COMMA: "COMMA",
+        OPENBRACKET: "OPENBRACKET",
+        CLOSEBRACKET: "CLOSEBRACKET",
+        CLOSEPAREN: "CLOSEPAREN",
+        BECOMES: "BECOMES",
+        THEN: "THEN",
+        DO: "DO",
+        OPENPAREN: "OPENPAREN",
+        NUMBER: "NUMBER",
+        IDENT: "IDENT",
+        SEMI: "SEMI",
+        END: "END",
+        OD: "OD",
+        FI: "FI",
+        ELSE: "ELSE",
+        LET: "LET",
+        CALL: "CALL",
+        IF: "IF",
+        WHILE: "WHILE",
+        RETURN: "RETURN",
+        VAR: "VAR",
+        ARR: "ARR",
+        VOID: "VOID",
+        FUNC: "FUNC",
+        PROC: "PROC",
+        BEGIN: "BEGIN",
+        MAIN: "MAIN",
+        EOF: "EOF",
+    }
 
     SYMBOLS = {
         "*": TIMES,
@@ -150,9 +196,21 @@ class Token:
         self.type = self.ERROR  # Unset
 
     def __str__(self) -> str:
-        return f'"{self.sym}" (type: {self.type}) ' + \
-            f'<{self.file}:{self.line}:{self.col}>'
+        return f'"{self.sym}" ({self.TokenName[self.type]}) ' + \
+            f'{self.file}:{self.line}:{self.col}'
 
+    def __repr__(self) -> str:
+        return self.__str__()
+
+    def source_loc(self) -> str:
+        with open(self.file, "r") as f:
+            lines = f.readlines()
+        assert len(lines) > self.line-1
+
+        code_line = lines[self.line-1]
+        assert len(code_line) > self.col + len(self.sym) - 2
+
+        return f"{code_line}{' '*(self.col-1)}{'^'*len(self.sym)}"
 
 class Tokenizer:
     def __init__(self, file: str):
@@ -325,4 +383,3 @@ class Tokenizer:
             return self.identifier()
         else:
             return self.operator()
-
