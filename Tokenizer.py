@@ -138,7 +138,7 @@ class Token:
         "void": VOID,
         "function": FUNC,
         "procedure": PROC,
-        "computation": MAIN,
+        "main": MAIN,
     }
 
     def __init__(self, file: str, line: int, col: int):
@@ -150,7 +150,8 @@ class Token:
         self.type = self.ERROR  # Unset
 
     def __str__(self) -> str:
-        return f"{self.sym} (type: {self.type}) <{self.file}:{self.line}:{self.col}>"
+        return f'"{self.sym}" (type: {self.type}) ' + \
+            f'<{self.file}:{self.line}:{self.col}>'
 
 
 class Tokenizer:

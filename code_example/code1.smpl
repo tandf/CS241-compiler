@@ -1,0 +1,9 @@
+main
+	var a;
+	var b;
+	{
+		let a <- call InputNum();
+		let b <- call InputNum();
+		let a <- a + b;
+		call OutputNum(a);
+	}.
