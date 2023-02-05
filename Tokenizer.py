@@ -1,7 +1,7 @@
 #! /bin/env python3
 
 import sys
-from typing import Tuple
+from typing import Tuple, Dict
 
 
 class FileReader:
@@ -213,6 +213,9 @@ class Token:
         return f"{code_line}{' '*(self.col-1)}{'^'*len(self.sym)}"
 
 class Tokenizer:
+    ids: Dict[str, int]
+    names: Dict[int, str]
+
     def __init__(self, file: str):
         self.file = file
         self.fileReader = FileReader(self.file)

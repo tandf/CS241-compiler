@@ -8,13 +8,18 @@ import unittest
 
 
 class TestSSA(unittest.TestCase):
+    def setUp(self) -> None:
+        Inst._init()
+        return super().setUp()
+
     def test_inst(self):
         self.assertEqual(Inst.CNT, 0)
         i1 = Inst(OP.READ)
         i2 = Inst(OP.READ)
         i3 = Inst(OP.ADD, x=i1, y=i2)
-        i4 = Inst(OP.ADD, x=i1, y=i2, last_inst=i3)
-        i5 = Inst(OP.ADD, x=i1, y=i2, deleted=True)
+        i4 = Inst(OP.ADD, x=i1, y=i2, op_last_inst=i3)
+        i5 = Inst(OP.ADD, x=i1, y=i2)
+        i5.common_subexpression = i3
         self.assertEqual(Inst.CNT, 5)
 
         self.assertEqual(i1.id, 0)
@@ -29,6 +34,6 @@ class TestSSA(unittest.TestCase):
         self.assertEqual(Inst.get_inst(3), i4)
         self.assertEqual(Inst.get_inst(4), i5)
 
-        self.assertFalse(i1.deleted)
-        self.assertTrue(i5.deleted)
+        self.assertEqual(i1.common_subexpression, None)
+        self.assertEqual(i5.common_subexpression, i3)
 
