@@ -9,11 +9,11 @@ import tempfile
 
 
 class TestDebug(unittest.TestCase):
-    def check_NT(self, nt: SmplCDebug.NT, name:str):
+    def check_NT(self, nt: SmplCDebug.NT, name: str):
         self.assertTrue(isinstance(nt, SmplCDebug.NT))
         self.assertEqual(nt.name, name)
 
-    def check_token(self, token:Token, _type:int):
+    def check_token(self, token: Token, _type: int):
         self.assertTrue(isinstance(token, Token))
         self.assertEqual(token.type, _type)
 

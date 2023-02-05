@@ -56,5 +56,4 @@ class TestFileReader(unittest.TestCase):
         self.assertEqual(reader.getNext(), FileReader.ERROR)
         self.assertEqual(reader.idx, 5)
 
-if __name__ == "__main__":
-    unittest.main()
+        sys.stderr = sys.__stderr__

@@ -12,26 +12,33 @@ import tempfile
 class TestTokennizer(unittest.TestCase):
     def test_tokenizer_id_table(self):
         # Test identifier table related functions
-        t = Tokenizer("")
+        code = ""
+        with tempfile.NamedTemporaryFile() as tmp:
+            with open(tmp.name, "w") as f:
+                f.write(code)
+            tokenizer = Tokenizer(tmp.name)
+        self.assertEqual(tokenizer.fileReader.code, code)
+
         n1 = "test_var"
-        id1 = t.add_name(n1)
+        id1 = tokenizer.add_name(n1)
         self.assertEqual(id1, 0)
-        self.assertEqual(t.id2string(id1), n1)
-        self.assertEqual(t.string2id(n1), id1)
+        self.assertEqual(tokenizer.id2string(id1), n1)
+        self.assertEqual(tokenizer.string2id(n1), id1)
 
         n2 = "var2"
-        id2 = t.add_name(n2)
+        id2 = tokenizer.add_name(n2)
         self.assertEqual(id2, 1)
-        self.assertEqual(t.id2string(id2), n2)
-        self.assertEqual(t.string2id(n2), id2)
+        self.assertEqual(tokenizer.id2string(id2), n2)
+        self.assertEqual(tokenizer.string2id(n2), id2)
 
         sys.stderr = io.StringIO()
-        t.add_name(n2)
+        tokenizer.add_name(n2)
         self.assertEqual(sys.stderr.getvalue(),
                          f"Tokenizer error: Trying to add identifier {n2} for "
                          "the second time!\n")
-        self.assertTrue(t.is_error)
-        self.assertEqual(t.getNext().type, Token.ERROR)
+        self.assertTrue(tokenizer.is_error)
+        self.assertEqual(tokenizer.getNext().type, Token.ERROR)
+        sys.stderr = sys.__stderr__
 
     def test_tokenizer(self):
         code = "var1 - 15"
@@ -143,4 +150,3 @@ class TestTokennizer(unittest.TestCase):
         self.assertEqual((token.line, token.col), (3, 1))
         self.assertEqual(token.type, Token.PERIOD)
         self.assertEqual(token.sym, ".")
-
