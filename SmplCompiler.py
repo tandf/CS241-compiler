@@ -3,6 +3,7 @@
 from Tokenizer import Tokenizer, Token
 from typing import Callable, List
 from functools import wraps
+from Block import *
 
 class SmplCDebug:
     class NT:
@@ -98,7 +99,7 @@ class SmplCompiler:
         return wrapNT
 
     @_nonterminal
-    def designator(self):
+    def designator(self) -> SimpleBB:
         # designator = ident{ "[" expression "]" }
 
         self._check_token(Token.IDENT, 'Expecting identifier at the beginning '
@@ -115,7 +116,7 @@ class SmplCompiler:
             self.next()
 
     @_nonterminal
-    def factor(self):
+    def factor(self) -> SimpleBB:
         # factor = designator | number | "(" expression ")" | funcCall
 
         if self.inputSym.type == Token.IDENT:
@@ -140,7 +141,7 @@ class SmplCompiler:
                 f"Factor starts with unexpected token {self.inputSym}")
 
     @_nonterminal
-    def term(self):
+    def term(self) -> SimpleBB:
         # term = factor { ("*" | "/") factor}
 
         self.factor()
@@ -156,7 +157,7 @@ class SmplCompiler:
                 return
 
     @_nonterminal
-    def expression(self):
+    def expression(self) -> SimpleBB:
         # expression = term {("+" | "-") term}
 
         self.term()
@@ -172,7 +173,7 @@ class SmplCompiler:
                 return
 
     @_nonterminal
-    def relation(self):
+    def relation(self) -> SimpleBB:
         # relation = expression relOp expression
 
         self.expression()
@@ -184,7 +185,7 @@ class SmplCompiler:
         self.expression()
 
     @_nonterminal
-    def assignment(self) -> None:
+    def assignment(self) -> SimpleBB:
         # assignment = "let" designator "<-" expression
 
         self._check_token(
@@ -200,7 +201,7 @@ class SmplCompiler:
         self.expression()
 
     @_nonterminal
-    def funcCall(self):
+    def funcCall(self) -> SimpleBB:
         # funcCall = "call" ident [ "(" [expression { "," expression } ] ")" ]
 
         self._check_token(Token.CALL, 'Expecting keyword "call" at the '
@@ -231,7 +232,7 @@ class SmplCompiler:
             pass
 
     @_nonterminal
-    def ifStatement(self):
+    def ifStatement(self) -> SuperBlock:
         # ifStatement = "if" relation "then" statSequence [ "else" statSequence ] "fi"
 
         self._check_token(Token.IF, 'Expecting "if" at the begining of '
@@ -253,7 +254,7 @@ class SmplCompiler:
         self.next()
 
     @_nonterminal
-    def whileStatement(self):
+    def whileStatement(self) -> SuperBlock:
         # whileStatement = "while" relation "do" StatSequence "od"
 
         self._check_token(Token.WHILE, 'Expecting "while" at the begining of '
@@ -271,7 +272,7 @@ class SmplCompiler:
         self.next()
 
     @_nonterminal
-    def returnStatement(self):
+    def returnStatement(self) -> SimpleBB:
         # returnStatement = "return" [ expression ]
 
         self._check_token(Token.RETURN, 'Expecting "return" at the begining of '
@@ -282,7 +283,7 @@ class SmplCompiler:
             self.expression()
 
     @_nonterminal
-    def statement(self):
+    def statement(self) -> Block:
         # statement = assignment | funcCall | ifStatement | whileStatement | returnStatement
 
         if self.inputSym.type == Token.LET:
@@ -299,7 +300,7 @@ class SmplCompiler:
             raise Exception(f'Expecting statment, found {self.inputSym}')
 
     @_nonterminal
-    def statSequence(self):
+    def statSequence(self) -> SuperBlock:
         # statSequence = statement { ";" statement } [ ";" ]
 
         statement_tokens = [Token.LET, Token.CALL,

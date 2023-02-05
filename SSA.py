@@ -31,6 +31,8 @@ class Inst:
     op: OP
     x: Inst
     y: Inst
+    x_ident: int
+    y_ident: int
     common_subexpression: Inst
     op_last_inst: Inst
 
@@ -50,10 +52,13 @@ class Inst:
         return cls.ALL_INST[id]
 
     def __init__(self, op: OP, x: Inst = None, y: Inst = None,
+                 x_ident: int = None, y_ident: int = None,
                  op_last_inst: Inst = None):
         self.op = op
         self.x = x
         self.y = y
+        self.x_ident = x_ident
+        self.y_ident = y_ident
         self.common_subexpression = None
 
         # Unique id for each SSA instruction
@@ -90,3 +95,9 @@ class Inst:
         elif commutative and self.x == __o.y and self.y == __o.x:
             return True
         return False
+
+    def replace_operand(self, _from: Inst, _from_ident: int, _to: Inst) -> None:
+        if self.x == _from and self.x_ident == _from_ident:
+            self.x = _to
+        if self.y == _from and self.y_ident == _from_ident:
+            self.y = _to

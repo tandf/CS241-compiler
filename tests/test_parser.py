@@ -8,7 +8,7 @@ from SmplCompiler import *
 import tempfile
 
 
-class TestDebug(unittest.TestCase):
+class TestParser(unittest.TestCase):
     def check_NT(self, nt: SmplCDebug.NT, name: str):
         self.assertTrue(isinstance(nt, SmplCDebug.NT))
         self.assertEqual(nt.name, name)

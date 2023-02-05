@@ -31,6 +31,7 @@ class CommonSubexpressionTable:
             head = head.op_last_inst
         return head
 
+
 class ValueTable:
     table: Dict[int, SSA.Inst]
 
@@ -48,17 +49,15 @@ class ValueTable:
 
 
 class Block:
-    insts: List[SSA.Inst]
-
     def __init__(self):
-        self.next_block = None
-        self.insts = []
+        pass
 
     def get_value_table(self) -> ValueTable:
         # Value table at the end of the block. Can reflect the new assignments.
         raise Exception("Unimplemented!")
 
-    def change_SSA_id(self, _from: SSA.Inst, _to: SSA.Inst) -> None:
+    def replace_operand(self, _from: SSA.Inst, _from_ident: int,
+                        _to: SSA.Inst) -> None:
         # Change all usages of _from to _to. This is for loop statements
         raise Exception("Unimplemented!")
 
@@ -66,13 +65,35 @@ class Block:
 class BasicBlock(Block):
     value_table: ValueTable
     cs_table: CommonSubexpressionTable
+    insts: List[SSA.Inst]
+    inBlock: BasicBlock
+    outBlock: BasicBlock
 
     def __init__(self):
         self.value_table = ValueTable()
         self.cs_table = CommonSubexpressionTable()
+        self.insts = []
+        self.inBlock = None
+        self.outBlock = None
 
     def get_value_table(self) -> ValueTable:
-        return
+        return self.value_table
+
+    def add_inst(self, inst: SSA.Inst) -> None:
+        self.insts.append(inst)
+
+    def replace_operand(self, _from: SSA.Inst, _from_ident: int,
+                        _to: SSA.Inst) -> None:
+        for inst in self.insts:
+            inst.replace_operand(_from, _from_ident, _to)
+
+    def get_all_insts(self) -> List[SSA.Inst]:
+        return self.insts
+
+class SimpleBB(BasicBlock):
+    def __init__(self):
+        # The simplest BasicBlock that has no joining edge or branch edge
+        pass
 
 
 class BranchBB(BasicBlock):
@@ -83,21 +104,32 @@ class BranchBB(BasicBlock):
 
 
 class JoinBB(BasicBlock):
-    joiningBlocks: List[BasicBlock]
+    joiningBlock: BasicBlock
+    phiInsts: List[SSA.Inst]
 
     def __init__(self):
-        self.joiningBlocks = []
+        self.joiningBlock = None
+        self.phiInsts = []
+
+    def get_all_insts(self) -> List[SSA.Inst]:
+        return self.phiInsts + self.insts
 
 
 class SuperBlock(Block):
     # A group of basic blocks with one entry and one exit
 
-    head: BasicBlock
-    tail: BasicBlock
+    head: BasicBlock  # First block in the super block.
+    tail: BasicBlock  # Last block in the super block. Can be the same as head.
 
     def __init__(self):
         self.head = None
         self.tail = None
 
     def get_value_table(self) -> ValueTable:
+        # TODO: Merge value table from tail to head
+        pass
+
+    def replace_operand(self, _from: SSA.Inst, _from_ident: int,
+                        _to: SSA.Inst) -> None:
+        # TODO: Replace operands from head to tail
         pass
