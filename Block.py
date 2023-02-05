@@ -76,6 +76,8 @@ class BasicBlock(Block):
         self.inBlock = None
         self.outBlock = None
 
+        # TODO: assign block number
+
     def get_value_table(self) -> ValueTable:
         return self.value_table
 

@@ -1,40 +1,10 @@
 from __future__ import annotations
-from enum import Enum
-
-class OP(Enum):
-    ADD = 0
-    SUB = 1
-    MUL = 2
-    DIV = 3
-    CMP = 4
-
-    ADDA = 5
-    LOAD = 6
-    STORE = 7
-    PHI = 8
-
-    END = 9
-    BRA = 10
-    BNE = 11
-    BEQ = 12
-    BLE = 13
-    BLT = 14
-    BGE = 15
-    BGT = 16
-
-    READ = 17
-    WRITE = 18
-    WRITENL = 19
+from enum import Enum, auto
+from typing import List
 
 
-class Inst:
-    op: OP
-    x: Inst
-    y: Inst
-    x_ident: int
-    y_ident: int
-    common_subexpression: Inst
-    op_last_inst: Inst
+class SSAValue:
+    id: int
 
     # Global count of all instructions
     CNT = 0
@@ -48,30 +18,99 @@ class Inst:
         cls.ALL_INST = []
 
     @classmethod
-    def get_inst(cls, id: int) -> Inst:
+    def get_inst(cls, id: int) -> SSAValue:
         return cls.ALL_INST[id]
+
+    def __init__(self):
+        # Unique id for each SSA instruction
+        self.id = SSAValue.CNT
+        # Update class variables
+        SSAValue.CNT += 1
+        SSAValue.ALL_INST.append(self)
+
+    def __eq__(self, __o: Inst) -> bool:
+        return __o and self.id == __o.id
+
+
+class Const(SSAValue):
+    ALL_CONST: List[Const]
+
+    # A list of all defined const values
+    ALL_CONST = []
+
+    def __init__(self, num: int):
+        super().__init__()
+        self.num = num
+        Const.ALL_CONST.append(self)
+
+    def __str__(self) -> str:
+        s = f"{self.id} # {self.num}"
+        return s
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
+    @classmethod
+    def get_const(cls, num) -> Const:
+        for const in cls.ALL_CONST:
+            if const.num == num:
+                return const
+        return Const(num)
+
+
+class OP(Enum):
+    ADD = auto()
+    SUB = auto()
+    MUL = auto()
+    DIV = auto()
+    CMP = auto()
+
+    ADDA = auto()
+    LOAD = auto()
+    STORE = auto()
+    PHI = auto()
+
+    END = auto()
+    BRA = auto()
+    BNE = auto()
+    BEQ = auto()
+    BLE = auto()
+    BLT = auto()
+    BGE = auto()
+    BGT = auto()
+
+    READ = auto()
+    WRITE = auto()
+    WRITENL = auto()
+
+    def __str__(self) -> str:
+        return f'{self.name}'
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
+class Inst(SSAValue):
+    op: OP
+    x: Inst
+    y: Inst
+    x_ident: int
+    y_ident: int
+    common_subexpression: Inst
+    op_last_inst: Inst
 
     def __init__(self, op: OP, x: Inst = None, y: Inst = None,
                  x_ident: int = None, y_ident: int = None,
                  op_last_inst: Inst = None):
+        super().__init__()
+
         self.op = op
         self.x = x
         self.y = y
         self.x_ident = x_ident
         self.y_ident = y_ident
         self.common_subexpression = None
-
-        # Unique id for each SSA instruction
-        self.id = Inst.CNT
         # Last SSA instruction with the same op
         self.op_last_inst = op_last_inst
-
-        # Update class variables
-        Inst.CNT += 1
-        Inst.ALL_INST.append(self)
-
-    def __eq__(self, __o: Inst) -> bool:
-        return __o and self.id == __o.id
 
     def __str__(self) -> str:
         s = f"{self.id} {str(self.op)}"
