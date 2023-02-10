@@ -12,6 +12,7 @@ class TestBlock(unittest.TestCase):
     def setUp(self) -> None:
         SSA.Inst._init()
         BasicBlock.CNT = 0
+        BasicBlock.ALL_BB = []
         Block.CNT = 0
         return super().setUp()
 
@@ -169,18 +170,22 @@ class TestBlock(unittest.TestCase):
         s1.head = s1b1
         s1.tail = s1join
 
+        s1b1.last = b0
         s1b1.next = s1branch
-        s1branch.last = s1b1
 
+        s1branch.last = s1b1
         s1branch.branchBlock = s1b2
         s1branch.next = s1b3
-        s1b2.last = s1branch
-        s1b3.last = s1branch
 
+        s1b2.last = s1branch
         s1b2.next = s1join
+
+        s1b3.last = s1branch
         s1b3.next = s1join
+
         s1join.joiningBlock = s1b2
         s1join.last = s1b3
+        s1join.next = s2
 
         ## Within s2 ##
         s2s0 = SuperBlock()
@@ -204,6 +209,7 @@ class TestBlock(unittest.TestCase):
 
         s2s0b.last = s1
         s2s0b.next = s2s1
+
         s2s1b.last = s2s0
         s2s1b.next = s3
 

@@ -9,24 +9,27 @@ class SSAValue:
     # Global count of all instructions
     CNT = 0
     # A list of all SSA instructions, ordered by id
-    ALL_INST = []
+    ALL_SSA = []
 
     @classmethod
     def _init(cls) -> None:
         # For unit test
         cls.CNT = 0
-        cls.ALL_INST = []
+        cls.ALL_SSA = []
 
     @classmethod
     def get_inst(cls, id: int) -> SSAValue:
-        return cls.ALL_INST[id]
+        return cls.ALL_SSA[id]
 
     def __init__(self):
         # Unique id for each SSA instruction
         self.id = SSAValue.CNT
         # Update class variables
         SSAValue.CNT += 1
-        SSAValue.ALL_INST.append(self)
+        SSAValue.ALL_SSA.append(self)
+
+    def __repr__(self) -> str:
+        return self.__str__()
 
     def __eq__(self, __o: Inst) -> bool:
         return __o and self.id == __o.id
@@ -44,11 +47,7 @@ class Const(SSAValue):
         Const.ALL_CONST.append(self)
 
     def __str__(self) -> str:
-        s = f"{self.id} # {self.num}"
-        return s
-
-    def __repr__(self) -> str:
-        return self.__str__()
+        return f"{self.id}: const #{self.num}"
 
     @classmethod
     def get_const(cls, num) -> Const:
@@ -59,6 +58,7 @@ class Const(SSAValue):
 
 
 class OP(Enum):
+    EMPTY = auto()
     ADD = auto()
     SUB = auto()
     MUL = auto()
@@ -84,7 +84,7 @@ class OP(Enum):
     WRITENL = auto()
 
     def __str__(self) -> str:
-        return f'{self.name}'
+        return f'{self.name}'.lower()
 
     def __repr__(self) -> str:
         return self.__str__()
@@ -113,17 +113,14 @@ class Inst(SSAValue):
         self.op_last_inst = op_last_inst
 
     def __str__(self) -> str:
-        s = f"{self.id} {str(self.op)}"
+        s = f"{self.id}: {str(self.op)}"
         if self.x:
-            s += f" {self.x.id}"
+            s += f" ({self.x.id})"
         if self.y:
-            s += f" {self.y.id}"
+            s += f" ({self.y.id})"
         if self.common_subexpression:
             s += f" (cs: {self.common_subexpression.id})"
         return s
-
-    def __repr__(self) -> str:
-        return self.__str__()
 
     def is_common_subexpression(self, __o: Inst,
                                 commutative: bool = False) -> bool:

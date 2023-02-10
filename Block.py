@@ -83,7 +83,7 @@ class Block:
     def last_bb(self) -> BasicBlock:
         # Return last basic block.
         if isinstance(self.last, SuperBlock):
-            return self.last.tail
+            return self.last.get_lastbb()
         else:
             return self.last
 
@@ -95,7 +95,7 @@ class Block:
     def next_bb(self) -> BasicBlock:
         # Return next basic block.
         if isinstance(self.next, SuperBlock):
-            return self.next.head
+            return self.next.get_firstbb()
         else:
             return self.next
 
@@ -120,8 +120,11 @@ class BasicBlock(Block):
     insts: List[SSA.Inst]
     bbid: int
 
+    ALL_BB: List[BasicBlock]
+
     # Global count of all basic blocks
     CNT = 0
+    ALL_BB = []
 
     def __init__(self):
         super().__init__()
@@ -132,6 +135,7 @@ class BasicBlock(Block):
         # Unique basic block id
         self.bbid = BasicBlock.CNT
         BasicBlock.CNT += 1
+        BasicBlock.ALL_BB.append(self)
 
     def get_value_table(self) -> ValueTable:
         return self.value_table
@@ -149,6 +153,16 @@ class BasicBlock(Block):
 
     def get_bbs(self) -> Set[BasicBlock]:
         return set([self])
+
+    def dot_name(self) -> str:
+        return f"BB{self.bbid}"
+
+    def dot_label(self) -> str:
+        if self.insts:
+            insts_str = "|".join([str(inst) for inst in self.insts])
+        else:
+            insts_str = "empty"
+        return f"<b>BB{self.bbid} | {{{insts_str}}}"
 
 
 class SimpleBB(BasicBlock):
@@ -168,6 +182,12 @@ class BranchBB(BasicBlock):
     def __str__(self) -> str:
         return f"BranchBB{self.bbid} b{self.id}"
 
+    def get_branch_head(self):
+        if self.branchBlock and isinstance(self.branchBlock, SuperBlock):
+            return self.branchBlock.head
+        else:
+            return self.branchBlock
+
 
 class JoinBB(BasicBlock):
     joiningBlock: Block
@@ -180,6 +200,12 @@ class JoinBB(BasicBlock):
 
     def __str__(self) -> str:
         return f"JoinBB{self.bbid} b{self.id}"
+
+    def get_joining_tail(self):
+        if self.joiningBlock and isinstance(self.joiningBlock, SuperBlock):
+            return self.joiningBlock.tail
+        else:
+            return self.joiningBlock
 
     def get_all_insts(self) -> List[SSA.Inst]:
         return self.phiInsts + self.insts
@@ -197,7 +223,17 @@ class SuperBlock(Block):
         self.tail = None
 
     def __str__(self) -> str:
-        return f"Super{self.bbid} b{self.id}"
+        return f"Super b{self.id}"
+
+    def get_firstbb(self) -> BasicBlock:
+        if isinstance(self.head, SuperBlock):
+            return self.head.get_firstbb()
+        return self.head
+
+    def get_lastbb(self) -> BasicBlock:
+        if isinstance(self.tail, SuperBlock):
+            return self.tail.get_lastbb()
+        return self.tail
 
     def get_value_table(self) -> ValueTable:
         # TODO: Merge value table from tail to head
