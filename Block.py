@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import List, Dict
+from typing import List, Dict, Set
 import SSA
 
 
@@ -49,8 +49,55 @@ class ValueTable:
 
 
 class Block:
+    last: Block
+    next: Block
+    id: int
+
+    CNT = 0
+
     def __init__(self):
-        pass
+        self.last = None
+        self.next = None
+
+        # Unique block id
+        self.id = Block.CNT
+        Block.CNT += 1
+
+    def __eq__(self, __o: object) -> bool:
+        return isinstance(__o, Block) and __o.id == self.id
+
+    def __hash__(self) -> int:
+        return self.id
+
+    def __str__(self) -> str:
+        raise Exception("Unimplemented!")
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
+    def last_block(self) -> Block:
+        # Return last block. If there is a super block, return the super block.
+        # If not, return the basic block.
+        return self.last
+
+    def last_bb(self) -> BasicBlock:
+        # Return last basic block.
+        if isinstance(self.last, SuperBlock):
+            return self.last.tail
+        else:
+            return self.last
+
+    def next_block(self) -> Block:
+        # Return last block. If there is a super block, return the super block.
+        # If not, return the basic block.
+        return self.next
+
+    def next_bb(self) -> BasicBlock:
+        # Return next basic block.
+        if isinstance(self.next, SuperBlock):
+            return self.next.head
+        else:
+            return self.next
 
     def get_value_table(self) -> ValueTable:
         # Value table at the end of the block. Can reflect the new assignments.
@@ -61,22 +108,30 @@ class Block:
         # Change all usages of _from to _to. This is for loop statements
         raise Exception("Unimplemented!")
 
+    def get_bbs(self) -> Set[BasicBlock]:
+        # Return all basic blocks within this block. If this is a basic block,
+        # return itself. If it's a superblock, return all basic blocks inside.
+        raise Exception("Unimplemented!")
+
 
 class BasicBlock(Block):
     value_table: ValueTable
     cs_table: CommonSubexpressionTable
     insts: List[SSA.Inst]
-    inBlock: BasicBlock
-    outBlock: BasicBlock
+    bbid: int
+
+    # Global count of all basic blocks
+    CNT = 0
 
     def __init__(self):
+        super().__init__()
         self.value_table = ValueTable()
         self.cs_table = CommonSubexpressionTable()
         self.insts = []
-        self.inBlock = None
-        self.outBlock = None
 
-        # TODO: assign block number
+        # Unique basic block id
+        self.bbid = BasicBlock.CNT
+        BasicBlock.CNT += 1
 
     def get_value_table(self) -> ValueTable:
         return self.value_table
@@ -92,26 +147,39 @@ class BasicBlock(Block):
     def get_all_insts(self) -> List[SSA.Inst]:
         return self.insts
 
+    def get_bbs(self) -> Set[BasicBlock]:
+        return set([self])
+
+
 class SimpleBB(BasicBlock):
     def __init__(self):
-        # The simplest BasicBlock that has no joining edge or branch edge
-        pass
+        super().__init__()
 
+    def __str__(self) -> str:
+        return f"SimpleBB{self.bbid} b{self.id}"
 
 class BranchBB(BasicBlock):
-    branchBlock: BasicBlock
+    branchBlock: Block
 
     def __init__(self):
+        super().__init__()
         self.branchBlock = None
+
+    def __str__(self) -> str:
+        return f"BranchBB{self.bbid} b{self.id}"
 
 
 class JoinBB(BasicBlock):
-    joiningBlock: BasicBlock
+    joiningBlock: Block
     phiInsts: List[SSA.Inst]
 
     def __init__(self):
+        super().__init__()
         self.joiningBlock = None
         self.phiInsts = []
+
+    def __str__(self) -> str:
+        return f"JoinBB{self.bbid} b{self.id}"
 
     def get_all_insts(self) -> List[SSA.Inst]:
         return self.phiInsts + self.insts
@@ -120,12 +188,16 @@ class JoinBB(BasicBlock):
 class SuperBlock(Block):
     # A group of basic blocks with one entry and one exit
 
-    head: BasicBlock  # First block in the super block.
-    tail: BasicBlock  # Last block in the super block. Can be the same as head.
+    head: Block  # First block in the super block.
+    tail: Block  # Last block in the super block. Can be the same as head.
 
     def __init__(self):
+        super().__init__()
         self.head = None
         self.tail = None
+
+    def __str__(self) -> str:
+        return f"Super{self.bbid} b{self.id}"
 
     def get_value_table(self) -> ValueTable:
         # TODO: Merge value table from tail to head
@@ -135,3 +207,26 @@ class SuperBlock(Block):
                         _to: SSA.Inst) -> None:
         # TODO: Replace operands from head to tail
         pass
+
+    def get_bbs(self) -> Set[BasicBlock]:
+        ret = set()
+
+        block = self.head
+        ret.update(block.get_bbs())
+
+        while block != self.tail:
+            if isinstance(block, BranchBB):
+                assert(block.branchBlock)
+                ret.update(block.branchBlock.get_bbs())
+
+            block = block.next_block()
+            if block is None:
+                assert(self.tail is None)
+            else:
+                ret.update(block.get_bbs())
+
+        if isinstance(block, BranchBB):
+            assert(block.branchBlock)
+            ret.update(block.branchBlock.get_bbs())
+
+        return ret
