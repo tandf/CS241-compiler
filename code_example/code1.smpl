@@ -4,6 +4,6 @@ main
 	{
 		let a <- call InputNum();
 		let b <- call InputNum();
-		let a <- a + b;
+		let a <- a + b + 1;
 		call OutputNum(a);
 	}.

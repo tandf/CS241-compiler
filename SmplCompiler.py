@@ -1,17 +1,19 @@
 #! /bin/env python3
 
 from Tokenizer import Tokenizer, Token
-from typing import Callable, List
+from typing import Callable, List, Tuple
 from functools import wraps
 from Block import *
+from IRVis import IRVis
+
 
 class SmplCDebug:
     class NT:
-        def __init__(self, name:str):
+        def __init__(self, name: str):
             self.name = name
             self.components = []
 
-    def __init__(self, file:str=None):
+    def __init__(self, file: str = None):
         self.root = []
         self.current = self.root
         self.stack = []
@@ -29,7 +31,7 @@ class SmplCDebug:
     def pop(self):
         self.current = self.stack.pop()
 
-    def toStr(self, node:List, indent:int=0) -> str:
+    def toStr(self, node: List, indent: int = 0) -> str:
         string = ""
 
         for item in node:
@@ -53,11 +55,21 @@ class SmplCDebug:
 
 
 class SmplCompiler:
+    file: str
+    debug: SmplCDebug
+    tokenizer: Tokenizer
+    inputSym: Token
+    constBlock: Block
+
     def __init__(self, file: str, debug: SmplCDebug = None):
         self.file = file
         self.debug = debug
         self.tokenizer = Tokenizer(self.file)
         self.inputSym = None
+        self.constBlock = None
+        # TODO: define variable table, used to track types of variables
+
+        self._debug_printed = False
 
         # Read the first token
         self.next()
@@ -74,16 +86,17 @@ class SmplCompiler:
         assert self.inputSym.type in tokens, msg
 
     def _debug_print(self):
-        print(self.inputSym.source_loc())
+        if not self._debug_printed:
+            print(self.inputSym.source_loc())
+            self._debug_printed = True
 
     def _nonterminal(func: Callable):
         @wraps(func)
-
-        def wrapNT(self):
+        def wrapNT(self, *args, **kargs):
             try:
                 if self.debug:
                     self.debug.push(func.__name__)
-                ret = func(self)
+                ret = func(self, *args, **kargs)
 
             except Exception as e:
                 if self.debug:
@@ -99,7 +112,8 @@ class SmplCompiler:
         return wrapNT
 
     @_nonterminal
-    def designator(self) -> SimpleBB:
+    def designator(self, context: SimpleBB):
+        # TODO: simple example
         # designator = ident{ "[" expression "]" }
 
         self._check_token(Token.IDENT, 'Expecting identifier at the beginning '
@@ -109,99 +123,105 @@ class SmplCompiler:
         while self.inputSym.type == Token.OPENBRACKET:
             self.next()
 
-            self.expression()
+            self.expression(context)
 
             self._check_token(Token.CLOSEBRACKET,
                               f'Expecting "]", found {self.inputSym}')
             self.next()
 
     @_nonterminal
-    def factor(self) -> SimpleBB:
+    def factor(self, context: SimpleBB):
+        # TODO: simple exampl
         # factor = designator | number | "(" expression ")" | funcCall
 
         if self.inputSym.type == Token.IDENT:
-            self.designator()
+            self.designator(context)
 
         elif self.inputSym.type == Token.NUMBER:
             num = self.tokenizer.num
+            num_ir = SSA.Const.get_const(num)
             self.next()
 
         elif self.inputSym.type == Token.OPENPAREN:
             self.next()
-            self.expression()
+            self.expression(context)
             self._check_token(Token.CLOSEPAREN,
                               "Unmatched parentheses in factor!")
             self.next()
 
         elif self.inputSym.type == Token.CALL:
-            self.funcCall()
+            self.funcCall(context)
 
         else:
             raise Exception(
                 f"Factor starts with unexpected token {self.inputSym}")
 
     @_nonterminal
-    def term(self) -> SimpleBB:
+    def term(self, context: SimpleBB):
+        # TODO: simple examle
         # term = factor { ("*" | "/") factor}
 
-        self.factor()
+        self.factor(context)
 
         while True:
             if self.inputSym.type == Token.TIMES:
                 self.next()
-                self.factor()
+                self.factor(context)
             elif self.inputSym.type == Token.DIV:
                 self.next()
-                self.factor()
+                self.factor(context)
             else:
                 return
 
     @_nonterminal
-    def expression(self) -> SimpleBB:
+    def expression(self, context: SimpleBB):
+        # TODO: simple example
         # expression = term {("+" | "-") term}
 
-        self.term()
+        self.term(context)
 
         while True:
             if self.inputSym.type == Token.PLUS:
                 self.next()
-                self.term()
+                self.term(context)
             elif self.inputSym.type == Token.MINUS:
                 self.next()
-                self.term()
+                self.term(context)
             else:
                 return
 
     @_nonterminal
-    def relation(self) -> SimpleBB:
+    def relation(self, context: SimpleBB):
         # relation = expression relOp expression
 
-        self.expression()
+        self.expression(context)
 
         self._check_tokens(Token.RELOPS, 'Expecting relation operator, found '
                            f'{self.inputSym}')
         self.next()
 
-        self.expression()
+        self.expression(context)
 
     @_nonterminal
-    def assignment(self) -> SimpleBB:
+    def assignment(self, context: SimpleBB):
+        # TODO: simple example
         # assignment = "let" designator "<-" expression
 
         self._check_token(
             Token.LET, f'Expecting keyword "let", found {self.inputSym}')
         self.next()
 
-        self.designator()
+        self.designator(context)
 
         self._check_token(Token.BECOMES, 'Expecting "<-" after variable name, '
                           f'found {self.inputSym}')
         self.next()
 
-        self.expression()
+        self.expression(context)
 
     @_nonterminal
-    def funcCall(self) -> SimpleBB:
+    def funcCall(self, context: SimpleBB):
+        # TODO: simple example > only read and write
         # funcCall = "call" ident [ "(" [expression { "," expression } ] ")" ]
 
         self._check_token(Token.CALL, 'Expecting keyword "call" at the '
@@ -216,7 +236,7 @@ class SmplCompiler:
             self.next()
 
             while self.inputSym.type != Token.CLOSEPAREN:
-                self.expression()
+                self.expression(context)
 
                 if self.inputSym.type == Token.COMMA:
                     self.next()
@@ -232,8 +252,17 @@ class SmplCompiler:
             pass
 
     @_nonterminal
-    def ifStatement(self) -> SuperBlock:
+    def ifStatement(self, lastBlock: Block) -> SuperBlock:
         # ifStatement = "if" relation "then" statSequence [ "else" statSequence ] "fi"
+
+        superBlock = SuperBlock()
+        superBlock.last = lastBlock
+
+        relBlock = BranchBB()
+        connectBlock = JoinBB()
+        relBlock.last = lastBlock
+        superBlock.head = relBlock
+        superBlock.tail = connectBlock
 
         self._check_token(Token.IF, 'Expecting "if" at the begining of '
                           f'ifStatement, found {self.inputSym}')
@@ -243,19 +272,43 @@ class SmplCompiler:
         self._check_token(Token.THEN, 'Expecting "then" in ifStatement, found '
                           f'{self.inputSym}')
         self.next()
-        self.statSequence()
+        ifBlock = self.statSequence(relBlock)
+        ifBlock.next = connectBlock
+        ifBlock.get_lastbb().next = connectBlock
+        relBlock.next = ifBlock
+        connectBlock.last = ifBlock
 
         if self.inputSym.type == Token.ELSE:
             self.next()
-            self.statSequence()
+            elseBlock = self.statSequence(relBlock)
+            elseBlock.next = connectBlock
+            elseBlock.get_lastbb().next = connectBlock
+            relBlock.branchBlock = elseBlock
+            connectBlock.joiningBlock = elseBlock
+        else:
+            relBlock.branchBlock = connectBlock
+            connectBlock.joiningBlock = relBlock
 
         self._check_token(Token.FI, 'Expecting "fi" at the end of ifStatement, '
                           f'found {self.inputSym}')
         self.next()
 
+        return superBlock
+
     @_nonterminal
-    def whileStatement(self) -> SuperBlock:
+    def whileStatement(self, lastBlock: Block) -> SuperBlock:
         # whileStatement = "while" relation "do" StatSequence "od"
+
+        superBlock = SuperBlock()
+        superBlock.last = lastBlock
+
+        connectBlock = JoinBB()
+        relBlock = BranchBB()
+        connectBlock.last = lastBlock
+        connectBlock.next = relBlock
+        relBlock.last = connectBlock
+        superBlock.head = connectBlock
+        superBlock.tail = relBlock
 
         self._check_token(Token.WHILE, 'Expecting "while" at the begining of '
                           f'whileStatement, found {self.inputSym}')
@@ -265,14 +318,18 @@ class SmplCompiler:
         self._check_token(Token.DO, 'Expecting "do" in whileStatement, found '
                           f'{self.inputSym}')
         self.next()
-        self.statSequence()
+        bodyBlock = self.statSequence(relBlock)
+        bodyBlock.next = connectBlock
+        bodyBlock.get_lastbb().next = connectBlock
+        connectBlock.joiningBlock = bodyBlock
+        relBlock.next = bodyBlock
 
         self._check_token(Token.OD, 'Expecting "od" at the end of whileStatement, '
                           f'found {self.inputSym}')
         self.next()
 
     @_nonterminal
-    def returnStatement(self) -> SimpleBB:
+    def returnStatement(self, context: SimpleBB):
         # returnStatement = "return" [ expression ]
 
         self._check_token(Token.RETURN, 'Expecting "return" at the begining of '
@@ -280,46 +337,103 @@ class SmplCompiler:
         self.next()
 
         if self.inputSym.type in [Token.IDENT, Token.NUMBER, Token.OPENPAREN, Token.CALL]:
-            self.expression()
+            self.expression(context)
+
+    def _get_ctx(self, lastBlock: Block, canMerge: bool = False) -> SimpleBB:
+        if isinstance(lastBlock, SimpleBB) and canMerge:
+            context = lastBlock
+        else:
+            context = SimpleBB()
+            context.last = lastBlock
+            lastBlock.next = context
+            if isinstance(lastBlock, SuperBlock):
+                lastBlock.get_lastbb().next = context
+        return context
 
     @_nonterminal
-    def statement(self) -> Block:
+    def statement(self, lastBlock: Block, canMerge: bool = False) -> Block:
+        #  TODO: simple example
         # statement = assignment | funcCall | ifStatement | whileStatement | returnStatement
 
         if self.inputSym.type == Token.LET:
-            self.assignment()
+            context = self._get_ctx(lastBlock, canMerge)
+            self.assignment(context)
+            return context
+
         elif self.inputSym.type == Token.CALL:
-            self.funcCall()
+            context = self._get_ctx(lastBlock, canMerge)
+            self.funcCall(context)
+            return context
+
         elif self.inputSym.type == Token.IF:
-            self.ifStatement()
+            ifBlock = self.ifStatement(lastBlock)
+            lastBlock.next = ifBlock
+            if isinstance(lastBlock, SuperBlock):
+                lastBlock.get_lastbb().next = ifBlock
+            return ifBlock
+
         elif self.inputSym.type == Token.WHILE:
-            self.whileStatement()
+            whileBlock = self.whileStatement(lastBlock)
+            lastBlock.next = whileBlock
+            if isinstance(lastBlock, SuperBlock):
+                lastBlock.get_lastbb().next = whileBlock
+            return whileBlock
+
         elif self.inputSym.type == Token.RETURN:
-            self.returnStatement()
+            context = self._get_ctx(lastBlock, canMerge)
+            self.returnStatement(context)
+            return context
+
         else:
             raise Exception(f'Expecting statment, found {self.inputSym}')
 
     @_nonterminal
-    def statSequence(self) -> SuperBlock:
+    def statSequence(self, lastBlock: Block) -> SuperBlock:
+        # TODO: simple example
         # statSequence = statement { ";" statement } [ ";" ]
 
-        statement_tokens = [Token.LET, Token.CALL,
-                             Token.IF, Token.WHILE, Token.RETURN]
+        superBlock = SuperBlock()
+        superBlock.last = lastBlock
 
+        statement_tokens = [Token.LET, Token.CALL,
+                            Token.IF, Token.WHILE, Token.RETURN]
+ 
         # Check for the first assignment
         self._check_tokens(statement_tokens,
                            f'Expecting statement, found {self.inputSym}')
 
+        first_block = True
         while self.inputSym.type in statement_tokens:
-            self.statement()
+            block = self.statement(lastBlock, canMerge=not first_block)
+            if first_block:
+                block.last = lastBlock
+                first_block = False
+
+            # Check if a new block was just created
+            if block.id != lastBlock.id:
+                lastBlock.next = block
+                if isinstance(lastBlock, SuperBlock):
+                    lastBlock.get_lastbb().next = block
+
+                # Connect new block in the list of the superBlock
+                if not superBlock.head:
+                    superBlock.head = block
+                if superBlock.tail:
+                    superBlock.tail.next = block
+                    block.last = superBlock.tail
+                superBlock.tail = block
+                lastBlock = block
 
             if self.inputSym.type == Token.SEMI:
                 self.next()
             else:
                 break
 
+        return superBlock
+
     @_nonterminal
     def typeDecl(self):
+        # TODO: simple example
         # typeDecl = "var" | "array" "[" number "]" { "[" number "]" }
 
         if self.inputSym.type == Token.VAR:
@@ -348,14 +462,18 @@ class SmplCompiler:
                             f'typeDecl, found {self.inputSym}')
 
     @_nonterminal
+    # TODO: Should return a variable table? {variable: type}
     def varDecl(self):
+        # TODO: simple example
         # varDecl = typeDecl ident { "," ident } ";"
 
+        # TODO: Get type
         self.typeDecl()
 
         while True:
             self._check_token(Token.IDENT, 'Expecting identifier, found '
                               f'{self.inputSym}')
+            self.inputSym  # TODO: Add to variable table
             self.next()
 
             if self.inputSym.type == Token.COMMA:
@@ -416,7 +534,7 @@ class SmplCompiler:
         self.next()
 
     @_nonterminal
-    def funcBody(self):
+    def funcBody(self) -> SuperBlock:
         # funcBody = { varDecl } "{" [ statSequence ] "}"
 
         while self.inputSym.type in [Token.VAR, Token.ARR]:
@@ -433,9 +551,9 @@ class SmplCompiler:
                           f'funcBody, found {self.inputSym}')
         self.next()
 
-
     @_nonterminal
     def computation(self):
+        # TODO: simple example
         # computation = "main" { varDecl } { funcDecl } "{" statSequence "}" "."
 
         self._check_token(Token.MAIN, 'Expecting keyword "main" at the start '
@@ -445,6 +563,7 @@ class SmplCompiler:
         while self.inputSym.type == Token.VAR or self.inputSym.type == Token.ARR:
             self.varDecl()
 
+        # TODO: Create functions
         while self.inputSym.type == Token.VOID or self.inputSym.type == Token.FUNC:
             self.funcDecl()
 
@@ -452,7 +571,11 @@ class SmplCompiler:
             Token.BEGIN, f'Expecting "{{", found {self.inputSym}')
         self.next()
 
-        self.statSequence()
+        # Create const block (BB0)
+        self.constBlock = SimpleBB()
+
+        mainBlock = self.statSequence(self.constBlock)
+        self.constBlock.next = mainBlock
 
         self._check_token(
             Token.END, f'Expecting "}}", found {self.inputSym}')
@@ -462,10 +585,19 @@ class SmplCompiler:
                           f'computation, found {self.inputSym}')
         self.next()
 
+        for const_ir in SSA.Const.ALL_CONST:
+            self.constBlock.add_inst(const_ir)
+
         return
 
 
 if __name__ == "__main__":
-    smplCompiler = SmplCompiler("code_example/code1.smpl", debug=SmplCDebug(file="out.txt"))
+    smplCompiler = SmplCompiler(
+        "code_example/code1.smpl", debug=SmplCDebug(file="debug.txt"))
     smplCompiler.computation()
     smplCompiler.debug.dump()
+
+    vis = IRVis()
+    for bb in BasicBlock.ALL_BB:
+        vis.bb(bb)
+    vis.render()

@@ -172,6 +172,13 @@ class SimpleBB(BasicBlock):
     def __str__(self) -> str:
         return f"SimpleBB{self.bbid} b{self.id}"
 
+    def merge_before(self, __o: SimpleBB) -> SimpleBB:
+        if __o:
+            # TODO: combine another simple block
+            pass
+        return self
+
+
 class BranchBB(BasicBlock):
     branchBlock: Block
 
