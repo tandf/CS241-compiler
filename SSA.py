@@ -46,8 +46,13 @@ class Const(SSAValue):
         self.num = num
         Const.ALL_CONST.append(self)
 
+    def to_str(self, dot_style: bool = False) -> str:
+        s= f'<font color="#FF69B4"><b>{self.id}</b></font>' if dot_style else f"{self.id}"
+        s += f": const #{self.num}"
+        return s
+
     def __str__(self) -> str:
-        return f"{self.id}: const #{self.num}"
+        return self.to_str(dot_style=False)
 
     @classmethod
     def get_const(cls, num) -> Const:
@@ -112,8 +117,9 @@ class Inst(SSAValue):
         # Last SSA instruction with the same op
         self.op_last_inst = op_last_inst
 
-    def __str__(self) -> str:
-        s = f"{self.id}: {str(self.op)}"
+    def to_str(self, dot_style: bool = False) -> str:
+        s = f'<font color="#FF69B4">{self.id}</font>' if dot_style else f"{self.id}"
+        s += ": {str(self.op)}"
         if self.x:
             s += f" ({self.x.id})"
         if self.y:
@@ -121,6 +127,9 @@ class Inst(SSAValue):
         if self.common_subexpression:
             s += f" (cs: {self.common_subexpression.id})"
         return s
+
+    def __str__(self) -> str:
+        return self.to_str(dot_style=False)
 
     def is_common_subexpression(self, __o: Inst,
                                 commutative: bool = False) -> bool:

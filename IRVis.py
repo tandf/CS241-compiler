@@ -1,31 +1,76 @@
-import graphviz
+from graphviz import Digraph
 from Block import *
 import SSA
 
 class IRVis:
-    g: graphviz.Digraph
+    g: Digraph
 
-    # TODO: Draw subgraphs for super blocks
+    def __init__(self, filename: str = "graph/out.dot") -> None:
+        self._graph = Digraph('structs', filename=filename,
+                                       node_attr={'shape': 'record'})
 
-    def __init__(self) -> None:
-        self.g = graphviz.Digraph('structs', filename='graph/out.dot',
-                                  node_attr={'shape': 'record'})
+    def _edge(self, src: BasicBlock, dst: BasicBlock,
+              label: str = None) -> None:
+        self._graph.edge(src.dot_name() + ":s",
+                         dst.dot_name() + ":n", label=label)
 
-    def bb(self, b: BasicBlock):
-        self.g.node(b.dot_name(), b.dot_label())
+    def _superBlock(self, sb: SuperBlock, g: Digraph) -> Set[BasicBlock]:
+        # Draw clusters for super blocks
 
+        with g.subgraph(name=sb.dot_name()) as c:
+            # TODO: add a more readable label
+            c.attr(color="#40E0D0", style="dashed",
+                   label=sb.dot_label(), fontcolor="#40E0D0")
+
+            visited = set()
+            block = sb.head
+            if block and isinstance(block, SuperBlock):
+                visited.update(self._superBlock(block, c))
+
+            while block and block != sb.tail:
+                if isinstance(block, BranchBB) and block.branchBlock:
+                    if isinstance(block.branchBlock, SuperBlock):
+                        visited.update(self._superBlock(block.branchBlock, c))
+
+                block = block.next
+                if block and isinstance(block, SuperBlock):
+                    visited.update(self._superBlock(block, c))
+
+            if isinstance(block, BranchBB) and block.branchBlock:
+                if isinstance(block.branchBlock, SuperBlock):
+                    visited.update(self._superBlock(block.branchBlock, c))
+
+            for b in sb.get_bbs() - visited:
+                self._basicBlock(b, c)
+
+            return sb.get_bbs()
+
+    def _basicBlock(self, b: BasicBlock, g: Digraph) -> None:
+        g.node(b.dot_name(), b.dot_label())
+
+    def _basicBlockEdges(self, b: BasicBlock) -> None:
         if isinstance(b, BranchBB):
             branchHead = b.get_branch_head()
             if branchHead:
-                self.g.edge(b.dot_name() + ":s",
-                            branchHead.dot_name() + ":n", label="branch")
+                self._edge(b, branchHead, "branch")
 
         next = b.next_bb()
         if next:
-            self.g.edge(b.dot_name() + ":s", next.dot_name() + ":n")
+            self._edge(b, next)
+
+    def block(self, block: Block) -> None:
+        if isinstance(block, SuperBlock):
+            for bb in block.get_bbs():
+                self._basicBlockEdges(bb)
+            self._superBlock(block, self._graph)
+        elif isinstance(block, BasicBlock):
+            self._basicBlock(block, self._graph)
+        else:
+            raise("Cannot draw block that is neither a super block nor a basic "
+                  f"block {block}")
 
     def render(self):
-        self.g.render()
+        self._graph.render()
 
 
 if __name__ == "__main__":
@@ -153,8 +198,5 @@ if __name__ == "__main__":
         bb.add_inst(SSA.Inst(SSA.OP.EMPTY))
 
     vis = IRVis()
-    bbs = superBlock.get_bbs()
-    for bb in bbs:
-        vis.bb(bb)
+    vis.block(superBlock)
     vis.render()
-

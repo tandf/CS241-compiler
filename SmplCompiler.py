@@ -59,14 +59,14 @@ class SmplCompiler:
     debug: SmplCDebug
     tokenizer: Tokenizer
     inputSym: Token
-    constBlock: Block
+    computationBlock: SuperBlock
 
     def __init__(self, file: str, debug: SmplCDebug = None):
         self.file = file
         self.debug = debug
         self.tokenizer = Tokenizer(self.file)
         self.inputSym = None
-        self.constBlock = None
+        self.computationBlock = SuperBlock("computation block")
         # TODO: define variable table, used to track types of variables
 
         self._debug_printed = False
@@ -255,7 +255,7 @@ class SmplCompiler:
     def ifStatement(self, lastBlock: Block) -> SuperBlock:
         # ifStatement = "if" relation "then" statSequence [ "else" statSequence ] "fi"
 
-        superBlock = SuperBlock()
+        superBlock = SuperBlock("if statement")
         superBlock.last = lastBlock
 
         relBlock = BranchBB()
@@ -273,6 +273,7 @@ class SmplCompiler:
                           f'{self.inputSym}')
         self.next()
         ifBlock = self.statSequence(relBlock)
+        ifBlock = "if body"
         ifBlock.next = connectBlock
         ifBlock.get_lastbb().next = connectBlock
         relBlock.next = ifBlock
@@ -281,6 +282,7 @@ class SmplCompiler:
         if self.inputSym.type == Token.ELSE:
             self.next()
             elseBlock = self.statSequence(relBlock)
+            elseBlock.name = "else body"
             elseBlock.next = connectBlock
             elseBlock.get_lastbb().next = connectBlock
             relBlock.branchBlock = elseBlock
@@ -299,7 +301,7 @@ class SmplCompiler:
     def whileStatement(self, lastBlock: Block) -> SuperBlock:
         # whileStatement = "while" relation "do" StatSequence "od"
 
-        superBlock = SuperBlock()
+        superBlock = SuperBlock("while statement")
         superBlock.last = lastBlock
 
         connectBlock = JoinBB()
@@ -319,6 +321,7 @@ class SmplCompiler:
                           f'{self.inputSym}')
         self.next()
         bodyBlock = self.statSequence(relBlock)
+        bodyBlock.name = "while body"
         bodyBlock.next = connectBlock
         bodyBlock.get_lastbb().next = connectBlock
         connectBlock.joiningBlock = bodyBlock
@@ -545,14 +548,15 @@ class SmplCompiler:
         self.next()
         
         if self.inputSym.type != Token.END:
-            self.statSequence()
+            bodyBlock = self.statSequence()
+            bodyBlock.name = "function body"
 
         self._check_token(Token.END, 'Expecting "}" at the end of '
                           f'funcBody, found {self.inputSym}')
         self.next()
 
     @_nonterminal
-    def computation(self):
+    def computation(self) -> SuperBlock:
         # TODO: simple example
         # computation = "main" { varDecl } { funcDecl } "{" statSequence "}" "."
 
@@ -570,12 +574,12 @@ class SmplCompiler:
         self._check_token(
             Token.BEGIN, f'Expecting "{{", found {self.inputSym}')
         self.next()
-
-        # Create const block (BB0)
-        self.constBlock = SimpleBB()
-
-        mainBlock = self.statSequence(self.constBlock)
-        self.constBlock.next = mainBlock
+        
+        # Create const block
+        constBlock = SimpleBB()
+        mainBlock = self.statSequence(constBlock)
+        mainBlock.name = "main function"
+        constBlock.next = mainBlock
 
         self._check_token(
             Token.END, f'Expecting "}}", found {self.inputSym}')
@@ -585,8 +589,13 @@ class SmplCompiler:
                           f'computation, found {self.inputSym}')
         self.next()
 
+        # Construct computation block that contains the const block ("BB0") and
+        # the main block
+        self.computationBlock.head = constBlock
+        self.computationBlock.tail = mainBlock
+
         for const_ir in SSA.Const.ALL_CONST:
-            self.constBlock.add_inst(const_ir)
+            constBlock.add_inst(const_ir)
 
         return
 
@@ -598,6 +607,5 @@ if __name__ == "__main__":
     smplCompiler.debug.dump()
 
     vis = IRVis()
-    for bb in BasicBlock.ALL_BB:
-        vis.bb(bb)
+    vis.block(smplCompiler.computationBlock)
     vis.render()
