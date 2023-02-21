@@ -1,9 +1,8 @@
 main
-	var a;
-	var b;
+	var a, b, c;
 	{
-		let a <- call InputNum();
+		let a <- 3;
 		let b <- call InputNum();
-		let a <- a + b + 1;
+		let a <- a / b + 1 * c - 4;
 		call OutputNum(a);
 	}.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 from enum import Enum, auto
 from typing import List
+import Tokenizer
 
 
 class SSAValue:
@@ -40,6 +41,11 @@ class Const(SSAValue):
 
     # A list of all defined const values
     ALL_CONST = []
+
+    @classmethod
+    def _init(cls) -> None:
+        # For unit test
+        cls.ALL_CONST = []
 
     def __init__(self, num: int):
         super().__init__()
@@ -88,11 +94,24 @@ class OP(Enum):
     WRITE = auto()
     WRITENL = auto()
 
+    _RELOP_TABLE = {
+        Tokenizer.Token.EQL: BEQ,
+        Tokenizer.Token.NEQ: BNE,
+        Tokenizer.Token.LSS: BLT,
+        Tokenizer.Token.GEQ: BGE,
+        Tokenizer.Token.LEQ: BLE,
+        Tokenizer.Token.GTR: BGT,
+    }
+
     def __str__(self) -> str:
         return f'{self.name}'.lower()
 
     def __repr__(self) -> str:
         return self.__str__()
+
+    @classmethod
+    def _from_relop(cls, relop: int) -> OP:
+        return
 
 class Inst(SSAValue):
     op: OP
@@ -118,8 +137,8 @@ class Inst(SSAValue):
         self.op_last_inst = op_last_inst
 
     def to_str(self, dot_style: bool = False) -> str:
-        s = f'<font color="#FF69B4">{self.id}</font>' if dot_style else f"{self.id}"
-        s += ": {str(self.op)}"
+        s = f'<font color="#FF69B4"><b>{self.id}</b></font>' if dot_style else f"{self.id}"
+        s += f": {self.op}"
         if self.x:
             s += f" ({self.x.id})"
         if self.y:

@@ -38,6 +38,9 @@ class ValueTable:
     def __init__(self):
         self.table = {}  # {identifier id: SSA inst}
 
+    def has(self, ident: int) -> bool:
+        return ident in self.table
+
     def set(self, ident: int, inst: SSA.Inst) -> None:
         self.table[ident] = inst
 
@@ -239,7 +242,7 @@ class SuperBlock(Block):
         return self.tail
 
     def get_value_table(self) -> ValueTable:
-        # TODO: Merge value table from tail to head
+        # TODO: Merge value table from head to tail
         pass
 
     def replace_operand(self, _from: SSA.Inst, _from_ident: int,

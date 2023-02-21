@@ -29,7 +29,7 @@ class FileReader:
     def open(self) -> None:
         try:
             with open(self.file) as f:
-                self.code = f.read()
+                self.code = f.read().expandtabs(tabsize=4)
         except:
             self.error(f"Fail to open file {self.file}")
 
@@ -187,6 +187,12 @@ class Token:
         "main": MAIN,
     }
 
+    file: str
+    line: int
+    col: int
+    sym: str
+    type: int
+
     def __init__(self, file: str, line: int, col: int):
         self.file = file
         self.line = line
@@ -207,10 +213,15 @@ class Token:
             lines = f.readlines()
         assert len(lines) > self.line-1
 
-        code_line = lines[self.line-1]
+        code_line = lines[self.line-1].expandtabs(tabsize=4)
+        if len(code_line) <= self.col + len(self.sym) - 2:
+            print(code_line)
+            print(len(code_line), self.col, len(self.sym))
         assert len(code_line) > self.col + len(self.sym) - 2
 
-        return f"{code_line}{' '*(self.col-1)}{'^'*len(self.sym)}"
+        file_loc = f"{self.file}({self.line}:{self.col})\n"
+
+        return f"{file_loc}{code_line}{' '*(self.col-1)}{'^'*len(self.sym)}"
 
 class Tokenizer:
     ids: Dict[str, int]

@@ -5,6 +5,9 @@ from typing import Callable, List, Tuple
 from functools import wraps
 from Block import *
 from IRVis import IRVis
+from SSA import SSAValue, Const, Inst
+from Types import *
+from Function import Function
 
 
 class SmplCDebug:
@@ -61,18 +64,31 @@ class SmplCompiler:
     inputSym: Token
     computationBlock: SuperBlock
 
+    variable_inits: Dict[int, SSAValue]
+    variable_types: Dict[int, VarType]
+
     def __init__(self, file: str, debug: SmplCDebug = None):
         self.file = file
         self.debug = debug
         self.tokenizer = Tokenizer(self.file)
         self.inputSym = None
         self.computationBlock = SuperBlock("computation block")
-        # TODO: define variable table, used to track types of variables
+
+        # Variables and their types
+        self.variable_types = {}  # Identifier id : var type
+        # Variables and their initialization values
+        self.variable_inits = {}  # Identifier id : initialization value
+        # Functions and their definition super block
+        self.funcs = {}  # Identifier id : function
 
         self._debug_printed = False
 
         # Read the first token
         self.next()
+
+        # Prevent the user from redefining these functions
+        for func in Function.PREDEFINED_FUNCTIONS:
+            self.tokenizer.add_name(func)
 
     def next(self) -> None:
         if self.debug and self.inputSym:
@@ -87,8 +103,21 @@ class SmplCompiler:
 
     def _debug_print(self):
         if not self._debug_printed:
-            print(self.inputSym.source_loc())
+            try:
+                print(self.inputSym.source_loc())
+            except:
+                pass
             self._debug_printed = True
+
+    def _compiling_msg(self, msg: str, sym: Token = None) -> str:
+        sym = sym if sym else self.inputSym
+        return f"{sym.source_loc()}\n{msg}"
+
+    def warning(self, msg:str, sym:Token = None) -> None:
+        print(self._compiling_msg("WARNING: " + msg, sym))
+
+    def error(self, msg: str, sym: Token = None) -> None:
+        raise Exception(self._compiling_msg("ERROR: " + msg, sym))
 
     def _nonterminal(func: Callable):
         @wraps(func)
@@ -112,116 +141,181 @@ class SmplCompiler:
         return wrapNT
 
     @_nonterminal
-    def designator(self, context: SimpleBB):
-        # TODO: simple example
+    def designator(self, context: SimpleBB,
+                   write: bool) -> Tuple[SSAValue, int, bool]:
         # designator = ident{ "[" expression "]" }
+
+        # Returned SSAValue:
+        # For scalars (write=False), return the SSAValue from the value table.
+        # For arrays, first emit instructions to calculate the offset. Then
+        # return the SSAValue of the offset.
 
         self._check_token(Token.IDENT, 'Expecting identifier at the beginning '
                           f'of designator, found {self.inputSym}')
+
+        sym = self.inputSym
+        id = self.tokenizer.id
+        type = self.variable_types[id]
+
         self.next()
 
+        dims = []
         while self.inputSym.type == Token.OPENBRACKET:
             self.next()
 
-            self.expression(context)
+            # TODO: Get array dimension(s) and combine them based on the
+            # variable type
+            dim = self.expression(context)
+            dims.append(dim)
 
             self._check_token(Token.CLOSEBRACKET,
                               f'Expecting "]", found {self.inputSym}')
             self.next()
 
+        # Array
+        if dims:
+            # TODO: Deal with array
+            # 1. Compute the offset
+            # 2. Return the SSAValue for the offset
+            return None, id, True
+
+        # Scalar
+        else:
+            if write:
+                return None, id, False
+
+            else:
+                # TODO: Get value table up to this block
+                value_table = context.get_value_table()
+                if value_table.has(id):
+                    return value_table.get(id), id, False
+                else:
+                    # Try to find initialization values
+                    if id not in self.variable_inits:
+                        self.warning("Using uninitialized variable!", sym)
+                        self.variable_inits[id] = SSA.Const.get_const(0)
+                    return self.variable_inits[id], id, False
+
     @_nonterminal
-    def factor(self, context: SimpleBB):
-        # TODO: simple exampl
+    def factor(self, context: SimpleBB) -> SSAValue:
         # factor = designator | number | "(" expression ")" | funcCall
 
         if self.inputSym.type == Token.IDENT:
-            self.designator(context)
+            ret, id, is_array = self.designator(context, write=False)
+            if is_array:
+                # TODO: Load from the offset (ret)
+                pass
+            else:
+                return ret
 
         elif self.inputSym.type == Token.NUMBER:
             num = self.tokenizer.num
-            num_ir = SSA.Const.get_const(num)
+            ret = Const.get_const(num)
             self.next()
+            return ret
 
         elif self.inputSym.type == Token.OPENPAREN:
             self.next()
-            self.expression(context)
+            ret = self.expression(context)
             self._check_token(Token.CLOSEPAREN,
                               "Unmatched parentheses in factor!")
             self.next()
+            return ret
 
         elif self.inputSym.type == Token.CALL:
-            self.funcCall(context)
+            return self.funcCall(context)
 
         else:
             raise Exception(
                 f"Factor starts with unexpected token {self.inputSym}")
 
     @_nonterminal
-    def term(self, context: SimpleBB):
-        # TODO: simple examle
+    def term(self, context: SimpleBB) -> SSAValue:
         # term = factor { ("*" | "/") factor}
 
-        self.factor(context)
+        val = self.factor(context)
 
         while True:
             if self.inputSym.type == Token.TIMES:
                 self.next()
-                self.factor(context)
+                operand = self.factor(context)
+                val = SSA.Inst(SSA.OP.MUL, val, operand)
+                context.add_inst(val)
+
             elif self.inputSym.type == Token.DIV:
                 self.next()
-                self.factor(context)
+                operand = self.factor(context)
+                val = SSA.Inst(SSA.OP.DIV, val, operand)
+                context.add_inst(val)
+
             else:
-                return
+                return val
 
     @_nonterminal
-    def expression(self, context: SimpleBB):
-        # TODO: simple example
+    def expression(self, context: SimpleBB) -> SSAValue:
         # expression = term {("+" | "-") term}
 
-        self.term(context)
+        val = self.term(context)
 
         while True:
             if self.inputSym.type == Token.PLUS:
                 self.next()
-                self.term(context)
+                operand = self.term(context)
+                val = SSA.Inst(SSA.OP.ADD, val, operand)
+                context.add_inst(val)
+
             elif self.inputSym.type == Token.MINUS:
                 self.next()
-                self.term(context)
+                operand = self.term(context)
+                val = SSA.Inst(SSA.OP.SUB, val, operand)
+                context.add_inst(val)
+
             else:
-                return
+                return val
 
     @_nonterminal
-    def relation(self, context: SimpleBB):
+    def relation(self, context: SimpleBB) -> Tuple[SSAValue, int]:
         # relation = expression relOp expression
 
-        self.expression(context)
+        operand1 = self.expression(context)
 
         self._check_tokens(Token.RELOPS, 'Expecting relation operator, found '
                            f'{self.inputSym}')
+        relop = self.inputSym.type
         self.next()
 
-        self.expression(context)
+        operand2 = self.expression(context)
+
+        ret = SSA.Inst(SSA.OP.CMP, operand1, operand2)
+        context.add_inst(ret)
+
+        return ret, relop
 
     @_nonterminal
-    def assignment(self, context: SimpleBB):
-        # TODO: simple example
+    def assignment(self, context: SimpleBB) -> None:
         # assignment = "let" designator "<-" expression
 
         self._check_token(
             Token.LET, f'Expecting keyword "let", found {self.inputSym}')
         self.next()
 
-        self.designator(context)
+        dst, id, is_array = self.designator(context, write=True)
 
         self._check_token(Token.BECOMES, 'Expecting "<-" after variable name, '
                           f'found {self.inputSym}')
         self.next()
 
-        self.expression(context)
+        src = self.expression(context)
+
+        if is_array:
+            # TODO: Store value to array
+            pass
+        else:
+            # Update the mapping in the value table
+            context.get_value_table().set(id, src)
 
     @_nonterminal
-    def funcCall(self, context: SimpleBB):
-        # TODO: simple example > only read and write
+    def funcCall(self, context: SimpleBB) -> SSAValue:
         # funcCall = "call" ident [ "(" [expression { "," expression } ] ")" ]
 
         self._check_token(Token.CALL, 'Expecting keyword "call" at the '
@@ -230,13 +324,18 @@ class SmplCompiler:
 
         self._check_token(Token.IDENT, 'Expecting function name, found '
                           f'{self.inputSym}')
+        sym = self.inputSym
+        id = self.tokenizer.id
+
         self.next()
+
+        args = []
 
         if self.inputSym.type == Token.OPENPAREN:
             self.next()
 
             while self.inputSym.type != Token.CLOSEPAREN:
-                self.expression(context)
+                args.append(self.expression(context))
 
                 if self.inputSym.type == Token.COMMA:
                     self.next()
@@ -246,10 +345,22 @@ class SmplCompiler:
                               f'{self.inputSym}')
             self.next()
 
-        else:
-            # TODO: functions without parameters can be called with or without
-            # paranthese. Make sure function doesn't have parameters
+        if sym.sym in Function.PREDEFINED_FUNCTIONS:
+            # Emit calling of the predefined function
+            op, param_cnt = Function.PREDEFINED_FUNCTIONS[sym.sym]
+            if param_cnt != len(args):
+                self.error(
+                    f"Expecting {param_cnt} parameters, getting {len(args)}.")
+            inst = SSA.Inst(op, *args)
+            context.add_inst(inst)
+            return inst
+
+        elif id in self.funcs:
+            # TODO: emit calling of that function
             pass
+
+        else:
+            self.error("Calling undefined function!", sym)
 
     @_nonterminal
     def ifStatement(self, lastBlock: Block) -> SuperBlock:
@@ -267,13 +378,14 @@ class SmplCompiler:
         self._check_token(Token.IF, 'Expecting "if" at the begining of '
                           f'ifStatement, found {self.inputSym}')
         self.next()
-        self.relation()
+        rel, relop = self.relation(relBlock)
+        # TODO: add branching inst
 
         self._check_token(Token.THEN, 'Expecting "then" in ifStatement, found '
                           f'{self.inputSym}')
         self.next()
         ifBlock = self.statSequence(relBlock)
-        ifBlock = "if body"
+        ifBlock.name = "if body"
         ifBlock.next = connectBlock
         ifBlock.get_lastbb().next = connectBlock
         relBlock.next = ifBlock
@@ -315,7 +427,8 @@ class SmplCompiler:
         self._check_token(Token.WHILE, 'Expecting "while" at the begining of '
                           f'whileStatement, found {self.inputSym}')
         self.next()
-        self.relation()
+        rel, relop = self.relation(relBlock)
+        # TODO: add branching inst
 
         self._check_token(Token.DO, 'Expecting "do" in whileStatement, found '
                           f'{self.inputSym}')
@@ -332,7 +445,7 @@ class SmplCompiler:
         self.next()
 
     @_nonterminal
-    def returnStatement(self, context: SimpleBB):
+    def returnStatement(self, context: SimpleBB) -> SSAValue:
         # returnStatement = "return" [ expression ]
 
         self._check_token(Token.RETURN, 'Expecting "return" at the begining of '
@@ -355,7 +468,6 @@ class SmplCompiler:
 
     @_nonterminal
     def statement(self, lastBlock: Block, canMerge: bool = False) -> Block:
-        #  TODO: simple example
         # statement = assignment | funcCall | ifStatement | whileStatement | returnStatement
 
         if self.inputSym.type == Token.LET:
@@ -392,7 +504,6 @@ class SmplCompiler:
 
     @_nonterminal
     def statSequence(self, lastBlock: Block) -> SuperBlock:
-        # TODO: simple example
         # statSequence = statement { ";" statement } [ ";" ]
 
         superBlock = SuperBlock()
@@ -435,12 +546,12 @@ class SmplCompiler:
         return superBlock
 
     @_nonterminal
-    def typeDecl(self):
-        # TODO: simple example
+    def typeDecl(self) -> VarType:
         # typeDecl = "var" | "array" "[" number "]" { "[" number "]" }
 
         if self.inputSym.type == Token.VAR:
             self.next()
+            return VarType.Scalar()
 
         elif self.inputSym.type == Token.ARR:
             self.next()
@@ -449,34 +560,43 @@ class SmplCompiler:
             self._check_token(Token.OPENBRACKET,
                               f'Expecting "[", found {self.inputSym}')
 
+            dims = []
             while self.inputSym.type == Token.OPENBRACKET:
                 self.next()
 
                 self._check_token(Token.NUMBER,
                                   f'Expecting number, found {self.inputSym}')
+                dim = self.tokenizer.num
+                dims.append(dim)
                 self.next()
 
                 self._check_token(Token.CLOSEBRACKET,
                                   f'Expecting "]", found {self.inputSym}')
                 self.next()
+            return VarType(dims)
 
         else:
             raise Exception('Excepting "var" or "array" at the beginning of '
                             f'typeDecl, found {self.inputSym}')
 
     @_nonterminal
-    # TODO: Should return a variable table? {variable: type}
     def varDecl(self):
-        # TODO: simple example
         # varDecl = typeDecl ident { "," ident } ";"
 
-        # TODO: Get type
-        self.typeDecl()
+        # Get type
+        type = self.typeDecl()
 
         while True:
             self._check_token(Token.IDENT, 'Expecting identifier, found '
                               f'{self.inputSym}')
-            self.inputSym  # TODO: Add to variable table
+
+            # Add identifier to type table
+            sym = self.inputSym
+            id = self.tokenizer.id
+            if id in self.variable_types:
+                self.error("Redefinition of variable!", sym)
+            self.variable_types[id] = type
+
             self.next()
 
             if self.inputSym.type == Token.COMMA:
@@ -547,8 +667,10 @@ class SmplCompiler:
                           f'funcBody, found {self.inputSym}')
         self.next()
         
+        constBlock = SimpleBB()
+
         if self.inputSym.type != Token.END:
-            bodyBlock = self.statSequence()
+            bodyBlock = self.statSequence(constBlock)
             bodyBlock.name = "function body"
 
         self._check_token(Token.END, 'Expecting "}" at the end of '
@@ -557,7 +679,6 @@ class SmplCompiler:
 
     @_nonterminal
     def computation(self) -> SuperBlock:
-        # TODO: simple example
         # computation = "main" { varDecl } { funcDecl } "{" statSequence "}" "."
 
         self._check_token(Token.MAIN, 'Expecting keyword "main" at the start '

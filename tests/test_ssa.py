@@ -10,14 +10,19 @@ import unittest
 class TestSSA(unittest.TestCase):
     def setUp(self) -> None:
         SSAValue._init()
+        Const._init()
         return super().setUp()
 
     def test_ssavalue(self):
         self.assertEqual(SSAValue.CNT, 0)
         i1 = Inst(OP.READ)
+        self.assertEqual(SSAValue.CNT, 1)
         i2 = Const.get_const(3)
+        self.assertEqual(SSAValue.CNT, 2)
         i3 = Inst(OP.ADD, x=i1, y=i2)
+        self.assertEqual(SSAValue.CNT, 3)
         i4 = Inst(OP.ADD, x=i1, y=i2, op_last_inst=i3)
+        self.assertEqual(SSAValue.CNT, 4)
         i5 = Inst(OP.ADD, x=i1, y=i2)
         i5.common_subexpression = i3
         self.assertEqual(SSAValue.CNT, 5)
