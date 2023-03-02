@@ -142,8 +142,19 @@ class BasicBlock(Block):
     def get_value_table(self) -> ValueTable:
         return self.value_table
 
+    def get_first_inst(self) -> SSA.Inst:
+        if self.insts:
+            return self.insts[0]
+        else:
+            return None
+
     def add_inst(self, inst: SSA.Inst) -> None:
         self.insts.append(inst)
+
+    def add_nop(self) -> SSA.Inst:
+        nop = SSA.Inst(SSA.OP.NOP)
+        self.insts.append(nop)
+        return nop
 
     def replace_operand(self, _from: SSA.Inst, _from_ident: int,
                         _to: SSA.Inst) -> None:

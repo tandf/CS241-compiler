@@ -3,7 +3,7 @@ from typing import Callable, List, Tuple
 from functools import wraps
 from Block import *
 from IRVis import IRVis
-from SSA import SSAValue, Const, Inst
+from SSA import SSAValue, Const, Inst, BlockFirstSSA
 from Types import *
 from Function import Function
 
@@ -377,7 +377,6 @@ class SmplCompiler:
                           f'ifStatement, found {self.inputSym}')
         self.next()
         rel, relop = self.relation(relBlock)
-        # TODO: add branching inst
 
         self._check_token(Token.THEN, 'Expecting "then" in ifStatement, found '
                           f'{self.inputSym}')
@@ -388,6 +387,12 @@ class SmplCompiler:
         relBlock.set_next(ifBlock)
         connectBlock.set_last(ifBlock)
 
+        # Branch to if block
+        ifBraOp = SSA.OP._from_relop(relop)
+        conditionBraOp = SSA.Inst(
+            ifBraOp, rel, BlockFirstSSA(ifBlock.get_firstbb()))
+        relBlock.add_inst(conditionBraOp)
+
         if self.inputSym.type == Token.ELSE:
             self.next()
             elseBlock = self.statSequence(relBlock)
@@ -395,9 +400,22 @@ class SmplCompiler:
             elseBlock.set_next(connectBlock)
             relBlock.branchBlock = elseBlock
             connectBlock.joiningBlock = elseBlock
+
+            # Fall through to else block
+            fallThroughBraOp = SSA.Inst(
+                SSA.OP.BRA, rel, BlockFirstSSA(elseBlock.get_firstbb()))
+            relBlock.add_inst(fallThroughBraOp)
+            # Branch from the end of if block to connect block
+            ifJoinBraOp = SSA.Inst(SSA.OP.BRA, BlockFirstSSA(connectBlock))
+            ifBlock.get_lastbb().add_inst(ifJoinBraOp)
+
         else:
             relBlock.branchBlock = connectBlock
             connectBlock.joiningBlock = relBlock
+            # Fall through to connect block
+            fallThroughBraOp = SSA.Inst(
+                SSA.OP.BRA, BlockFirstSSA(connectBlock))
+            relBlock.add_inst(fallThroughBraOp)
 
         self._check_token(Token.FI, 'Expecting "fi" at the end of ifStatement, '
                           f'found {self.inputSym}')

@@ -29,11 +29,14 @@ class SSAValue:
         SSAValue.CNT += 1
         SSAValue.ALL_SSA.append(self)
 
+    def get_id(self) -> int:
+        return self.id
+
     def __repr__(self) -> str:
         return self.__str__()
 
-    def __eq__(self, __o: Inst) -> bool:
-        return __o and self.id == __o.id
+    def __eq__(self, __o: SSAValue) -> bool:
+        return __o and self.get_id() == __o.get_id()
 
 
 class Const(SSAValue):
@@ -53,7 +56,8 @@ class Const(SSAValue):
         Const.ALL_CONST.append(self)
 
     def to_str(self, dot_style: bool = False) -> str:
-        s= f'<font color="#FF69B4"><b>{self.id}</b></font>' if dot_style else f"{self.id}"
+        s = f'<font color="#FF69B4"><b>{self.get_id()}</b></font>' \
+            if dot_style else f"{self.get_id()}"
         s += f": const #{self.num}"
         return s
 
@@ -94,14 +98,8 @@ class OP(Enum):
     WRITE = auto()
     WRITENL = auto()
 
-    _RELOP_TABLE = {
-        Tokenizer.Token.EQL: BEQ,
-        Tokenizer.Token.NEQ: BNE,
-        Tokenizer.Token.LSS: BLT,
-        Tokenizer.Token.GEQ: BGE,
-        Tokenizer.Token.LEQ: BLE,
-        Tokenizer.Token.GTR: BGT,
-    }
+    # Custom inst
+    NOP = auto()
 
     def __str__(self) -> str:
         return f'{self.name}'.lower()
@@ -111,7 +109,17 @@ class OP(Enum):
 
     @classmethod
     def _from_relop(cls, relop: int) -> OP:
-        return
+        _RELOP_TABLE = {
+            Tokenizer.Token.EQL: cls.BEQ,
+            Tokenizer.Token.NEQ: cls.BNE,
+            Tokenizer.Token.LSS: cls.BLT,
+            Tokenizer.Token.GEQ: cls.BGE,
+            Tokenizer.Token.LEQ: cls.BLE,
+            Tokenizer.Token.GTR: cls.BGT,
+        }
+
+        assert relop in _RELOP_TABLE
+        return _RELOP_TABLE[relop]
 
 class Inst(SSAValue):
     op: OP
@@ -137,14 +145,15 @@ class Inst(SSAValue):
         self.op_last_inst = op_last_inst
 
     def to_str(self, dot_style: bool = False) -> str:
-        s = f'<font color="#FF69B4"><b>{self.id}</b></font>' if dot_style else f"{self.id}"
+        s = f'<font color="#FF69B4"><b>{self.get_id()}</b></font>' \
+            if dot_style else f"{self.get_id()}"
         s += f": {self.op}"
         if self.x:
-            s += f" ({self.x.id})"
+            s += f" ({self.x.get_id()})"
         if self.y:
-            s += f" ({self.y.id})"
+            s += f" ({self.y.get_id()})"
         if self.common_subexpression:
-            s += f" (cs: {self.common_subexpression.id})"
+            s += f" (cs: {self.common_subexpression.get_id()})"
         return s
 
     def __str__(self) -> str:
@@ -165,3 +174,20 @@ class Inst(SSAValue):
             self.x = _to
         if self.y == _from and self.y_ident == _from_ident:
             self.y = _to
+
+class BlockFirstSSA(SSAValue):
+
+    def __init__(self, bb):
+        self.bb = bb
+
+    def get_target_SSA(self) -> SSAValue:
+        assert self.bb is not None
+        targetSSA =  self.bb.get_first_inst()
+        if targetSSA is None:
+            targetSSA = self.bb.add_nop()
+        return targetSSA
+
+    def get_id(self) -> int:
+        targetSSA = self.get_target_SSA()
+        assert targetSSA is not None
+        return targetSSA.get_id()
