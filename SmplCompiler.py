@@ -1,5 +1,3 @@
-#! /bin/env python3
-
 from Tokenizer import Tokenizer, Token
 from typing import Callable, List, Tuple
 from functools import wraps
@@ -367,11 +365,11 @@ class SmplCompiler:
         # ifStatement = "if" relation "then" statSequence [ "else" statSequence ] "fi"
 
         superBlock = SuperBlock("if statement")
-        superBlock.last = lastBlock
+        superBlock.set_last(lastBlock)
 
         relBlock = BranchBB()
         connectBlock = JoinBB()
-        relBlock.last = lastBlock
+        relBlock.set_last(lastBlock)
         superBlock.head = relBlock
         superBlock.tail = connectBlock
 
@@ -386,17 +384,15 @@ class SmplCompiler:
         self.next()
         ifBlock = self.statSequence(relBlock)
         ifBlock.name = "if body"
-        ifBlock.next = connectBlock
-        ifBlock.get_lastbb().next = connectBlock
-        relBlock.next = ifBlock
-        connectBlock.last = ifBlock
+        ifBlock.set_next(connectBlock)
+        relBlock.set_next(ifBlock)
+        connectBlock.set_last(ifBlock)
 
         if self.inputSym.type == Token.ELSE:
             self.next()
             elseBlock = self.statSequence(relBlock)
             elseBlock.name = "else body"
-            elseBlock.next = connectBlock
-            elseBlock.get_lastbb().next = connectBlock
+            elseBlock.set_next(connectBlock)
             relBlock.branchBlock = elseBlock
             connectBlock.joiningBlock = elseBlock
         else:
@@ -414,13 +410,13 @@ class SmplCompiler:
         # whileStatement = "while" relation "do" StatSequence "od"
 
         superBlock = SuperBlock("while statement")
-        superBlock.last = lastBlock
+        superBlock.set_last(lastBlock)
 
         connectBlock = JoinBB()
         relBlock = BranchBB()
-        connectBlock.last = lastBlock
-        connectBlock.next = relBlock
-        relBlock.last = connectBlock
+        connectBlock.set_last(lastBlock)
+        connectBlock.set_next(relBlock)
+        relBlock.set_last(connectBlock)
         superBlock.head = connectBlock
         superBlock.tail = relBlock
 
@@ -435,10 +431,9 @@ class SmplCompiler:
         self.next()
         bodyBlock = self.statSequence(relBlock)
         bodyBlock.name = "while body"
-        bodyBlock.next = connectBlock
-        bodyBlock.get_lastbb().next = connectBlock
+        bodyBlock.set_next(connectBlock)
         connectBlock.joiningBlock = bodyBlock
-        relBlock.next = bodyBlock
+        relBlock.set_next(bodyBlock)
 
         self._check_token(Token.OD, 'Expecting "od" at the end of whileStatement, '
                           f'found {self.inputSym}')
@@ -460,10 +455,7 @@ class SmplCompiler:
             context = lastBlock
         else:
             context = SimpleBB()
-            context.last = lastBlock
-            lastBlock.next = context
-            if isinstance(lastBlock, SuperBlock):
-                lastBlock.get_lastbb().next = context
+            context.set_last(lastBlock)
         return context
 
     @_nonterminal
@@ -482,16 +474,10 @@ class SmplCompiler:
 
         elif self.inputSym.type == Token.IF:
             ifBlock = self.ifStatement(lastBlock)
-            lastBlock.next = ifBlock
-            if isinstance(lastBlock, SuperBlock):
-                lastBlock.get_lastbb().next = ifBlock
             return ifBlock
 
         elif self.inputSym.type == Token.WHILE:
             whileBlock = self.whileStatement(lastBlock)
-            lastBlock.next = whileBlock
-            if isinstance(lastBlock, SuperBlock):
-                lastBlock.get_lastbb().next = whileBlock
             return whileBlock
 
         elif self.inputSym.type == Token.RETURN:
@@ -507,7 +493,7 @@ class SmplCompiler:
         # statSequence = statement { ";" statement } [ ";" ]
 
         superBlock = SuperBlock()
-        superBlock.last = lastBlock
+        superBlock.set_last(lastBlock)
 
         statement_tokens = [Token.LET, Token.CALL,
                             Token.IF, Token.WHILE, Token.RETURN]
@@ -516,27 +502,22 @@ class SmplCompiler:
         self._check_tokens(statement_tokens,
                            f'Expecting statement, found {self.inputSym}')
 
-        first_block = True
         while self.inputSym.type in statement_tokens:
-            block = self.statement(lastBlock, canMerge=not first_block)
-            if first_block:
-                block.last = lastBlock
-                first_block = False
-
-            # Check if a new block was just created
-            if block.id != lastBlock.id:
-                lastBlock.next = block
-                if isinstance(lastBlock, SuperBlock):
-                    lastBlock.get_lastbb().next = block
-
-                # Connect new block in the list of the superBlock
-                if not superBlock.head:
-                    superBlock.head = block
-                if superBlock.tail:
-                    superBlock.tail.next = block
-                    block.last = superBlock.tail
+            # This is the first block in the super block
+            if not superBlock.tail:
+                block = self.statement(lastBlock, canMerge=False)
+                block.set_last(lastBlock)
+                superBlock.head = block
                 superBlock.tail = block
-                lastBlock = block
+
+            else:
+                block = self.statement(superBlock.tail, canMerge=True)
+                # Check if a new block was just created
+                if block.id != superBlock.tail.id:
+                    # Connect new block in the list of the superBlock
+                    superBlock.tail.set_next(block)
+                    block.set_last(superBlock.tail)
+                    superBlock.tail = block
 
             if self.inputSym.type == Token.SEMI:
                 self.next()
@@ -700,7 +681,7 @@ class SmplCompiler:
         constBlock = SimpleBB()
         mainBlock = self.statSequence(constBlock)
         mainBlock.name = "main function"
-        constBlock.next = mainBlock
+        constBlock.set_next(mainBlock)
 
         self._check_token(
             Token.END, f'Expecting "}}", found {self.inputSym}')
@@ -720,13 +701,3 @@ class SmplCompiler:
 
         return
 
-
-if __name__ == "__main__":
-    smplCompiler = SmplCompiler(
-        "code_example/code1.smpl", debug=SmplCDebug(file="debug.txt"))
-    smplCompiler.computation()
-    smplCompiler.debug.dump()
-
-    vis = IRVis()
-    vis.block(smplCompiler.computationBlock)
-    vis.render()

@@ -50,9 +50,9 @@ class IRVis:
 
     def _basicBlockEdges(self, b: BasicBlock) -> None:
         if isinstance(b, BranchBB):
-            branchHead = b.get_branch_head()
-            if branchHead:
-                self._edge(b, branchHead, "branch")
+            branchBB = b.next_bb_branch()
+            if branchBB:
+                self._edge(b, branchBB, "branch")
 
         next = b.next_bb()
         if next:

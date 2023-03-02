@@ -78,6 +78,12 @@ class Block:
     def __repr__(self) -> str:
         return self.__str__()
 
+    def set_last(self, block: Block) -> None:
+        self.last = block
+
+    def set_next(self, block: Block) -> None:
+        self.next = block
+
     def last_bb(self) -> BasicBlock:
         # Return last basic block.
         if isinstance(self.last, SuperBlock):
@@ -186,11 +192,13 @@ class BranchBB(BasicBlock):
     def __str__(self) -> str:
         return f"BranchBB{self.bbid} b{self.id}"
 
-    def get_branch_head(self):
-        if self.branchBlock and isinstance(self.branchBlock, SuperBlock):
-            return self.branchBlock.head
-        else:
-            return self.branchBlock
+    def next_bb_branch(self) -> BasicBlock:
+        if self.branchBlock:
+            if isinstance(self.branchBlock, SuperBlock):
+                return self.branchBlock.get_firstbb()
+            else:
+                return self.branchBlock
+        return None
 
 
 class JoinBB(BasicBlock):
@@ -205,11 +213,13 @@ class JoinBB(BasicBlock):
     def __str__(self) -> str:
         return f"JoinBB{self.bbid} b{self.id}"
 
-    def get_joining_tail(self):
-        if self.joiningBlock and isinstance(self.joiningBlock, SuperBlock):
-            return self.joiningBlock.tail
-        else:
-            return self.joiningBlock
+    def last_bb_join(self) -> BasicBlock:
+        if self.joiningBlock:
+            if isinstance(self.joiningBlock, SuperBlock):
+                return self.joiningBlock.get_lastbb()
+            else:
+                return self.joiningBlock
+        return None
 
     def get_all_insts(self) -> List[SSA.Inst]:
         return self.phiInsts + self.insts
@@ -240,6 +250,18 @@ class SuperBlock(Block):
         if isinstance(self.tail, SuperBlock):
             return self.tail.get_lastbb()
         return self.tail
+
+    def set_last(self, block: Block) -> None:
+        super().set_last(block)
+        firstbb = self.get_firstbb()
+        if firstbb:
+            firstbb.last = block
+
+    def set_next(self, block: Block) -> None:
+        super().set_next(block)
+        lastbb = self.get_lastbb()
+        if lastbb:
+            lastbb.next = block
 
     def get_value_table(self) -> ValueTable:
         # TODO: Merge value table from head to tail
