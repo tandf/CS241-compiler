@@ -18,7 +18,6 @@ class IRVis:
         # Draw clusters for super blocks
 
         with g.subgraph(name=sb.dot_name()) as c:
-            # TODO: add a more readable label
             c.attr(color="#40E0D0", style="dashed",
                    label=sb.dot_label(), fontcolor="#40E0D0")
 
@@ -57,6 +56,8 @@ class IRVis:
         next = b.next_bb()
         if next:
             self._edge(b, next)
+
+        # TODO: also draw back edges to make sure everything is correct
 
     def block(self, block: Block) -> None:
         if isinstance(block, SuperBlock):

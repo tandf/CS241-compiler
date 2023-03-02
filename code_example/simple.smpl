@@ -3,6 +3,6 @@ main
 	{
 		let a <- 3;
 		let b <- call InputNum();
-		let a <- a / b + 1 * c - 4;
+		let a <- a / b + 1 * c - 4 + c;
 		call OutputNum(a);
 	}.

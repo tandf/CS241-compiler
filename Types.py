@@ -31,6 +31,13 @@ class VarType:
 
     def __eq__(self, __o: object) -> bool:
         assert(isinstance(__o, VarType))
+
+        # Check if any of these two is scalar
+        if self.dims is None:
+            return __o.dims is None
+        elif self.dims is None:
+            return False
+
         for this, that in zip(self.dims, __o.dims):
             if this != that:
                 return False

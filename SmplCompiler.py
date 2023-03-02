@@ -62,7 +62,6 @@ class SmplCompiler:
     inputSym: Token
     computationBlock: SuperBlock
 
-    variable_inits: Dict[int, SSAValue]
     variable_types: Dict[int, VarType]
 
     def __init__(self, file: str, debug: SmplCDebug = None):
@@ -74,8 +73,6 @@ class SmplCompiler:
 
         # Variables and their types
         self.variable_types = {}  # Identifier id : var type
-        # Variables and their initialization values
-        self.variable_inits = {}  # Identifier id : initialization value
         # Functions and their definition super block
         self.funcs = {}  # Identifier id : function
 
@@ -143,6 +140,8 @@ class SmplCompiler:
                    write: bool) -> Tuple[SSAValue, int, bool]:
         # designator = ident{ "[" expression "]" }
 
+        # Return values: SSAValue see below, int: identifier id, bool: is array
+
         # Returned SSAValue:
         # For scalars (write=False), return the SSAValue from the value table.
         # For arrays, first emit instructions to calculate the offset. Then
@@ -179,20 +178,20 @@ class SmplCompiler:
 
         # Scalar
         else:
+            assert type == VarType.Scalar()
             if write:
                 return None, id, False
 
             else:
-                # TODO: Get value table up to this block
-                value_table = context.get_value_table()
-                if value_table.has(id):
-                    return value_table.get(id), id, False
+                # Trace back and look up for the value in the value table
+                value = context.lookup_value_table(id)
+                if value is not None:
+                    return value, id, False
                 else:
-                    # Try to find initialization values
-                    if id not in self.variable_inits:
-                        self.warning("Using uninitialized variable!", sym)
-                        self.variable_inits[id] = SSA.Const.get_const(0)
-                    return self.variable_inits[id], id, False
+                    self.warning("Using uninitialized variable!", sym)
+                    zero = SSA.Const.get_const(0)
+                    context.get_value_table().set(id, zero)
+                    return zero, id, False
 
     @_nonterminal
     def factor(self, context: SimpleBB) -> SSAValue:

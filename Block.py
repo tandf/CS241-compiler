@@ -102,6 +102,15 @@ class Block:
         # Value table at the end of the block. Can reflect the new assignments.
         raise Exception("Unimplemented!")
 
+    def lookup_value_table(self, id: int) -> SSA.SSAValue:
+        block = self
+        while block != None:
+            value_table = block.get_value_table()
+            if value_table.has(id):
+                return value_table.get(id)
+            block = block.last
+        return None
+
     def replace_operand(self, _from: SSA.Inst, _from_ident: int,
                         _to: SSA.Inst) -> None:
         # Change all usages of _from to _to. This is for loop statements
@@ -186,12 +195,6 @@ class SimpleBB(BasicBlock):
     def __str__(self) -> str:
         return f"SimpleBB{self.bbid} b{self.id}"
 
-    def merge_before(self, __o: SimpleBB) -> SimpleBB:
-        if __o:
-            # TODO: combine another simple block
-            pass
-        return self
-
 
 class BranchBB(BasicBlock):
     branchBlock: Block
@@ -275,8 +278,23 @@ class SuperBlock(Block):
             lastbb.next = block
 
     def get_value_table(self) -> ValueTable:
-        # TODO: Merge value table from head to tail
-        pass
+        # Merge value table from head to tail
+        blocks = []
+        block = self.tail
+        while block != self.head:
+            assert block is not None
+            blocks.append(block)
+            if isinstance(block, JoinBB):
+                assert block.joiningBlock is not None
+                blocks.append(block.joiningBlock)
+            block = block.last
+        blocks.append(self.head)
+
+        value_table = ValueTable()
+        while blocks:
+            block = blocks.pop()
+            value_table.update(block.get_value_table())
+        return value_table
 
     def replace_operand(self, _from: SSA.Inst, _from_ident: int,
                         _to: SSA.Inst) -> None:
