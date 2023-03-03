@@ -52,14 +52,14 @@ class ValueTable:
 
 
 class Block:
-    last: Block
+    prev: Block
     next: Block
     id: int
 
     CNT = 0
 
     def __init__(self):
-        self.last = None
+        self.prev = None
         self.next = None
 
         # Unique block id
@@ -78,18 +78,18 @@ class Block:
     def __repr__(self) -> str:
         return self.__str__()
 
-    def set_last(self, block: Block) -> None:
-        self.last = block
+    def set_prev(self, block: Block) -> None:
+        self.prev = block
 
     def set_next(self, block: Block) -> None:
         self.next = block
 
-    def last_bb(self) -> BasicBlock:
-        # Return last basic block.
-        if isinstance(self.last, SuperBlock):
-            return self.last.get_lastbb()
+    def prev_bb(self) -> BasicBlock:
+        # Return prev basic block.
+        if isinstance(self.prev, SuperBlock):
+            return self.prev.get_lastbb()
         else:
-            return self.last
+            return self.prev
 
     def next_bb(self) -> BasicBlock:
         # Return next basic block.
@@ -108,7 +108,7 @@ class Block:
             value_table = block.get_value_table()
             if value_table.has(id):
                 return value_table.get(id)
-            block = block.last
+            block = block.prev
         return None
 
     def replace_operand(self, _from: SSA.Inst, _from_ident: int,
@@ -265,11 +265,11 @@ class SuperBlock(Block):
             return self.tail.get_lastbb()
         return self.tail
 
-    def set_last(self, block: Block) -> None:
-        super().set_last(block)
+    def set_prev(self, block: Block) -> None:
+        super().set_prev(block)
         firstbb = self.get_firstbb()
         if firstbb:
-            firstbb.last = block
+            firstbb.prev = block
 
     def set_next(self, block: Block) -> None:
         super().set_next(block)
@@ -287,7 +287,7 @@ class SuperBlock(Block):
             if isinstance(block, JoinBB):
                 assert block.joiningBlock is not None
                 blocks.append(block.joiningBlock)
-            block = block.last
+            block = block.prev
         blocks.append(self.head)
 
         value_table = ValueTable()

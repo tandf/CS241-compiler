@@ -3,7 +3,7 @@ from typing import Callable, List, Tuple
 from functools import wraps
 from Block import *
 from IRVis import IRVis
-from SSA import SSAValue, Const, Inst, BlockFirstSSA
+from SSA import SSAValue, Const, Inst, BlockFirstSSA, NextBlockFirstSSA
 from Types import *
 from Function import Function
 
@@ -364,11 +364,11 @@ class SmplCompiler:
         # ifStatement = "if" relation "then" statSequence [ "else" statSequence ] "fi"
 
         superBlock = SuperBlock("if statement")
-        superBlock.set_last(lastBlock)
+        superBlock.set_prev(lastBlock)
 
         relBlock = BranchBB()
         connectBlock = JoinBB()
-        relBlock.set_last(lastBlock)
+        relBlock.set_prev(lastBlock)
         superBlock.head = relBlock
         superBlock.tail = connectBlock
 
@@ -384,13 +384,13 @@ class SmplCompiler:
         ifBlock.name = "if body"
         ifBlock.set_next(connectBlock)
         relBlock.set_next(ifBlock)
-        connectBlock.set_last(ifBlock)
+        connectBlock.set_prev(ifBlock)
 
         # Branch to if block
         ifBraOp = SSA.OP._from_relop(relop)
-        conditionBraOp = SSA.Inst(
+        conditionBraInst = SSA.Inst(
             ifBraOp, rel, BlockFirstSSA(ifBlock.get_firstbb()))
-        relBlock.add_inst(conditionBraOp)
+        relBlock.add_inst(conditionBraInst)
 
         if self.inputSym.type == Token.ELSE:
             self.next()
@@ -401,9 +401,9 @@ class SmplCompiler:
             connectBlock.joiningBlock = elseBlock
 
             # Fall through to else block
-            fallThroughBraOp = SSA.Inst(
-                SSA.OP.BRA, rel, BlockFirstSSA(elseBlock.get_firstbb()))
-            relBlock.add_inst(fallThroughBraOp)
+            fallThroughBraInst = SSA.Inst(
+                SSA.OP.BRA, BlockFirstSSA(elseBlock.get_firstbb()))
+            relBlock.add_inst(fallThroughBraInst)
             # Branch from the end of if block to connect block
             ifJoinBraOp = SSA.Inst(SSA.OP.BRA, BlockFirstSSA(connectBlock))
             ifBlock.get_lastbb().add_inst(ifJoinBraOp)
@@ -412,9 +412,9 @@ class SmplCompiler:
             relBlock.branchBlock = connectBlock
             connectBlock.joiningBlock = relBlock
             # Fall through to connect block
-            fallThroughBraOp = SSA.Inst(
+            fallThroughBraInst = SSA.Inst(
                 SSA.OP.BRA, BlockFirstSSA(connectBlock))
-            relBlock.add_inst(fallThroughBraOp)
+            relBlock.add_inst(fallThroughBraInst)
 
         self._check_token(Token.FI, 'Expecting "fi" at the end of ifStatement, '
                           f'found {self.inputSym}')
@@ -427,13 +427,13 @@ class SmplCompiler:
         # whileStatement = "while" relation "do" StatSequence "od"
 
         superBlock = SuperBlock("while statement")
-        superBlock.set_last(lastBlock)
+        superBlock.set_prev(lastBlock)
 
         connectBlock = JoinBB()
         relBlock = BranchBB()
-        connectBlock.set_last(lastBlock)
+        connectBlock.set_prev(lastBlock)
         connectBlock.set_next(relBlock)
-        relBlock.set_last(connectBlock)
+        relBlock.set_prev(connectBlock)
         superBlock.head = connectBlock
         superBlock.tail = relBlock
 
@@ -441,7 +441,6 @@ class SmplCompiler:
                           f'whileStatement, found {self.inputSym}')
         self.next()
         rel, relop = self.relation(relBlock)
-        # TODO: add branching inst
 
         self._check_token(Token.DO, 'Expecting "do" in whileStatement, found '
                           f'{self.inputSym}')
@@ -450,11 +449,27 @@ class SmplCompiler:
         bodyBlock.name = "while body"
         bodyBlock.set_next(connectBlock)
         connectBlock.joiningBlock = bodyBlock
-        relBlock.set_next(bodyBlock)
+        relBlock.branchBlock = bodyBlock
 
         self._check_token(Token.OD, 'Expecting "od" at the end of whileStatement, '
                           f'found {self.inputSym}')
         self.next()
+
+        # Branch from relation block to body block if condition is met
+        whileBraOp = SSA.OP._from_relop(relop)
+        conditionBraInst = SSA.Inst(
+            whileBraOp, rel, BlockFirstSSA(bodyBlock.get_firstbb()))
+        relBlock.add_inst(conditionBraInst)
+
+        # Branch from relation block to the next block of while
+        relToNextBlockBraInst = SSA.Inst(SSA.OP.BRA, NextBlockFirstSSA(relBlock))
+        relBlock.add_inst(relToNextBlockBraInst)
+
+        # Branch from while body to connect block unconditionally
+        bodyToJoinBraInst = SSA.Inst(SSA.OP.BRA, BlockFirstSSA(connectBlock))
+        bodyBlock.get_lastbb().add_inst(bodyToJoinBraInst)
+
+        return superBlock
 
     @_nonterminal
     def returnStatement(self, context: SimpleBB) -> SSAValue:
@@ -472,7 +487,7 @@ class SmplCompiler:
             context = lastBlock
         else:
             context = SimpleBB()
-            context.set_last(lastBlock)
+            context.set_prev(lastBlock)
         return context
 
     @_nonterminal
@@ -510,7 +525,7 @@ class SmplCompiler:
         # statSequence = statement { ";" statement } [ ";" ]
 
         superBlock = SuperBlock()
-        superBlock.set_last(lastBlock)
+        superBlock.set_prev(lastBlock)
 
         statement_tokens = [Token.LET, Token.CALL,
                             Token.IF, Token.WHILE, Token.RETURN]
@@ -521,9 +536,9 @@ class SmplCompiler:
 
         while self.inputSym.type in statement_tokens:
             # This is the first block in the super block
-            if not superBlock.tail:
+            if superBlock.tail is None:
                 block = self.statement(lastBlock, canMerge=False)
-                block.set_last(lastBlock)
+                block.set_prev(lastBlock)
                 superBlock.head = block
                 superBlock.tail = block
 
@@ -533,7 +548,7 @@ class SmplCompiler:
                 if block.id != superBlock.tail.id:
                     # Connect new block in the list of the superBlock
                     superBlock.tail.set_next(block)
-                    block.set_last(superBlock.tail)
+                    block.set_prev(superBlock.tail)
                     superBlock.tail = block
 
             if self.inputSym.type == Token.SEMI:
@@ -691,17 +706,20 @@ class SmplCompiler:
             self.funcDecl()
 
         self._check_token(
-            Token.BEGIN, f'Expecting "{{", found {self.inputSym}')
+            Token.BEGIN, 'Expecting "{", found ' + f'{self.inputSym}')
         self.next()
         
         # Create const block
         constBlock = SimpleBB()
+        endBlock = SimpleBB()
         mainBlock = self.statSequence(constBlock)
         mainBlock.name = "main function"
         constBlock.set_next(mainBlock)
+        mainBlock.set_next(endBlock)
+        endBlock.set_prev(mainBlock)
 
         self._check_token(
-            Token.END, f'Expecting "}}", found {self.inputSym}')
+            Token.END, 'Expecting "}", found ' + f'{self.inputSym}')
         self.next()
 
         self._check_token(Token.PERIOD, f'Expecting "." at the end of '
@@ -711,7 +729,7 @@ class SmplCompiler:
         # Construct computation block that contains the const block ("BB0") and
         # the main block
         self.computationBlock.head = constBlock
-        self.computationBlock.tail = mainBlock
+        self.computationBlock.tail = endBlock
 
         for const_ir in SSA.Const.ALL_CONST:
             constBlock.add_inst(const_ir)

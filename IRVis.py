@@ -89,13 +89,13 @@ if __name__ == "__main__":
     superBlock.tail = b4
 
     b0.next = s1
-    s1.last = b0
+    s1.prev = b0
     s1.next = s2
-    s2.last = s1
+    s2.prev = s1
     s2.next = s3
-    s3.last = s2
+    s3.prev = s2
     s3.next = b4
-    b4.last = s3
+    b4.prev = s3
 
     ## Within s1 ##
     s1b1 = SimpleBB()
@@ -107,21 +107,21 @@ if __name__ == "__main__":
     s1.head = s1b1
     s1.tail = s1join
 
-    s1b1.last = b0
+    s1b1.prev = b0
     s1b1.next = s1branch
 
-    s1branch.last = s1b1
+    s1branch.prev = s1b1
     s1branch.branchBlock = s1b2
     s1branch.next = s1b3
 
-    s1b2.last = s1branch
+    s1b2.prev = s1branch
     s1b2.next = s1join
 
-    s1b3.last = s1branch
+    s1b3.prev = s1branch
     s1b3.next = s1join
 
     s1join.joiningBlock = s1b2
-    s1join.last = s1b3
+    s1join.prev = s1b3
     s1join.next = s2
 
     ## Within s2 ##
@@ -136,18 +136,18 @@ if __name__ == "__main__":
 
     s2s0.head = s2s0b
     s2s0.tail = s2s0b
-    s2s0.last = s1
+    s2s0.prev = s1
     s2s0.next = s2s1
 
     s2s1.head = s2s1b
     s2s1.tail = s2s1b
-    s2s1.last = s2s0
+    s2s1.prev = s2s0
     s2s1.next = s3
 
-    s2s0b.last = s1
+    s2s0b.prev = s1
     s2s0b.next = s2s1
 
-    s2s1b.last = s2s0
+    s2s1b.prev = s2s0
     s2s1b.next = s3
 
     ## Within s3 ##
@@ -162,25 +162,25 @@ if __name__ == "__main__":
     s3.head = s3b0
     s3.tail = s3branch
 
-    s3b0.last = s2
+    s3b0.prev = s2
     s3b0.next = s3join
 
-    s3join.last = s3b0
+    s3join.prev = s3b0
     s3join.next = s3branch
     s3join.joiningBlock = s3body
 
-    s3branch.last = s3join
+    s3branch.prev = s3join
     s3branch.next = b4
     s3branch.branchBlock = s3body
 
-    s3body.last = s3branch
+    s3body.prev = s3branch
     s3body.next = s3join
     s3body.head = s3bodyb0
     s3body.tail = s3bodyb1
 
-    s3bodyb0.last = s3branch
+    s3bodyb0.prev = s3branch
     s3bodyb0.next = s3bodyb1
-    s3bodyb1.last = s3bodyb0
+    s3bodyb1.prev = s3bodyb0
     s3bodyb1.next = s3join
 
     b0.add_inst(SSA.Const(3))

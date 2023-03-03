@@ -175,19 +175,44 @@ class Inst(SSAValue):
         if self.y == _from and self.y_ident == _from_ident:
             self.y = _to
 
-class BlockFirstSSA(SSAValue):
+class MetaSSA(SSAValue):
+    # Sometimes we cannot get a specific SSA instruction, but want to get the
+    # first, the last, or the next instruction. This class is used to model such
+    # behaviors.
 
-    def __init__(self, bb):
-        self.bb = bb
+    def __init__(self, block):
+        self.block = block
 
     def get_target_SSA(self) -> SSAValue:
-        assert self.bb is not None
-        targetSSA =  self.bb.get_first_inst()
-        if targetSSA is None:
-            targetSSA = self.bb.add_nop()
-        return targetSSA
+        raise Exception("Unimplemented!")
 
     def get_id(self) -> int:
         targetSSA = self.get_target_SSA()
         assert targetSSA is not None
         return targetSSA.get_id()
+
+
+class BlockFirstSSA(MetaSSA):
+    def __init__(self, block):
+        super().__init__(block)
+
+    def get_target_SSA(self) -> SSAValue:
+        assert self.block is not None
+        targetSSA =  self.block.get_first_inst()
+        if targetSSA is None:
+            targetSSA = self.block.add_nop()
+        return targetSSA
+
+
+class NextBlockFirstSSA(MetaSSA):
+    def __init__(self, block):
+        super().__init__(block)
+
+    def get_target_SSA(self) -> SSAValue:
+        assert self.block is not None
+        assert self.block.next is not None
+        targetSSA =  self.block.next.get_first_inst()
+        if targetSSA is None:
+            targetSSA = self.block.next.add_nop()
+        return targetSSA
+
