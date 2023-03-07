@@ -4,15 +4,24 @@ import SSA
 
 class IRVis:
     g: Digraph
+    # TODO: block domination
 
     def __init__(self, filename: str = "graph/out.dot") -> None:
         self._graph = Digraph('structs', filename=filename,
                                        node_attr={'shape': 'record'})
 
-    def _edge(self, src: BasicBlock, dst: BasicBlock,
-              label: str = None) -> None:
-        self._graph.edge(src.dot_name() + ":s",
-                         dst.dot_name() + ":n", label=label)
+    def _edge(self, src: BasicBlock, dst: BasicBlock) -> None:
+        self._graph.edge(src.dot_name() + ":s", dst.dot_name() + ":n")
+
+    def _edge_branch(self, src: BasicBlock, dst: BasicBlock) -> None:
+        color = "#D2691E"
+        self._graph.edge(src.dot_name() + ":s", dst.dot_name() + ":n",
+                         label="branch", color=color, fontcolor=color)
+
+    def _edge_fallthrough(self, src: BasicBlock, dst: BasicBlock) -> None:
+        color = "#00BFFF"
+        self._graph.edge(src.dot_name() + ":s", dst.dot_name() + ":n",
+                         label="fall through", color=color, fontcolor=color)
 
     def _superBlock(self, sb: SuperBlock, g: Digraph) -> Set[BasicBlock]:
         # Draw clusters for super blocks
@@ -48,14 +57,19 @@ class IRVis:
         g.node(b.dot_name(), b.dot_label())
 
     def _basicBlockEdges(self, b: BasicBlock) -> None:
+        next = b.next_bb()
+
         if isinstance(b, BranchBB):
+            if next:
+                self._edge_branch(b, next)
             branchBB = b.next_bb_branch()
             if branchBB:
-                self._edge(b, branchBB, "branch")
+                self._edge_fallthrough(b, branchBB)
 
-        next = b.next_bb()
-        if next:
-            self._edge(b, next)
+        # Normal blocks
+        else:
+            if next:
+                self._edge(b, next)
 
         # TODO: also draw back edges to make sure everything is correct
 

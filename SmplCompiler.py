@@ -405,13 +405,9 @@ class SmplCompiler:
             connectBlock.joiningBlock = elseBlock
             changed_variables.update(elseBlock.get_value_table().get_ids())
 
-            # Fall through to else block
-            fallThroughBraInst = SSA.Inst(
-                SSA.OP.BRA, BlockFirstSSA(elseBlock.get_firstbb()))
-            relBlock.add_inst(fallThroughBraInst)
-            # Branch from the end of if block to connect block
-            ifJoinBraOp = SSA.Inst(SSA.OP.BRA, BlockFirstSSA(connectBlock))
-            ifBlock.get_lastbb().add_inst(ifJoinBraOp)
+            # Branch from the end of else block to connect block
+            elseJoinBraOp = SSA.Inst(SSA.OP.BRA, BlockFirstSSA(connectBlock))
+            elseBlock.get_lastbb().add_inst(elseJoinBraOp)
 
         else:
             relBlock.branchBlock = connectBlock
