@@ -2,9 +2,10 @@ from __future__ import annotations
 from enum import Enum, auto
 from typing import List
 import Tokenizer
+import copy
 
 
-class SSAValue:
+class BaseSSA:
     id: int
 
     # Global count of all instructions
@@ -19,24 +20,40 @@ class SSAValue:
         cls.ALL_SSA = []
 
     @classmethod
-    def get_inst(cls, id: int) -> SSAValue:
+    def get_inst(cls, id: int) -> BaseSSA:
         return cls.ALL_SSA[id]
 
     def __init__(self):
         # Unique id for each SSA instruction
-        self.id = SSAValue.CNT
+        self.id = BaseSSA.CNT
         # Update class variables
-        SSAValue.CNT += 1
-        SSAValue.ALL_SSA.append(self)
+        BaseSSA.CNT += 1
+        BaseSSA.ALL_SSA.append(self)
 
+    # Get the real id for the SSA value. For meta SSA, return the *real* id of
+    # the SSA pointed to; for cse, return the real id of the SSA that is the
+    # common subexpression
     def get_id(self) -> int:
         return self.id
 
     def __repr__(self) -> str:
         return self.__str__()
 
-    def __eq__(self, __o: SSAValue) -> bool:
+    def __eq__(self, __o: BaseSSA) -> bool:
         return __o and self.get_id() == __o.get_id()
+
+
+class SSAValue(BaseSSA):
+    identifier: int
+
+    def __init__(self):
+        super().__init__()
+        # The corresponding identifier. The same SSA value (SSA id) can map to
+        # multiple identifier, and the same identifier can map to multiple SSA
+        # value (at different time).
+        # This mapping is for changing the SSA value which is required for
+        # inserting phi in while blocks
+        self.identifier = None
 
 
 class Const(SSAValue):
@@ -68,7 +85,7 @@ class Const(SSAValue):
     def get_const(cls, num) -> Const:
         for const in cls.ALL_CONST:
             if const.num == num:
-                return const
+                return copy.deepcopy(const)
         return Const(num)
 
 
@@ -121,25 +138,21 @@ class OP(Enum):
         assert relop in _RELOP_TABLE
         return _RELOP_TABLE[relop]
 
+
 class Inst(SSAValue):
     op: OP
-    x: Inst
-    y: Inst
-    x_ident: int
-    y_ident: int
+    x: BaseSSA
+    y: BaseSSA
     common_subexpression: Inst
     op_last_inst: Inst
 
     def __init__(self, op: OP, x: Inst = None, y: Inst = None,
-                 x_ident: int = None, y_ident: int = None,
                  op_last_inst: Inst = None):
         super().__init__()
 
         self.op = op
         self.x = x
         self.y = y
-        self.x_ident = x_ident
-        self.y_ident = y_ident
         self.common_subexpression = None
         # Last SSA instruction with the same op
         self.op_last_inst = op_last_inst
@@ -170,12 +183,15 @@ class Inst(SSAValue):
         return False
 
     def replace_operand(self, _from: Inst, _from_ident: int, _to: Inst) -> None:
-        if self.x == _from and self.x_ident == _from_ident:
+        if self.x is not None and isinstance(self.x, SSAValue) and \
+                self.x == _from and self.x.identifier == _from_ident:
             self.x = _to
-        if self.y == _from and self.y_ident == _from_ident:
+        if self.y is not None and isinstance(self.y, SSAValue) and \
+                self.y == _from and self.y.identifier == _from_ident:
             self.y = _to
 
-class MetaSSA(SSAValue):
+
+class MetaSSA(BaseSSA):
     # Sometimes we cannot get a specific SSA instruction, but want to get the
     # first, the last, or the next instruction. This class is used to model such
     # behaviors.
@@ -183,7 +199,7 @@ class MetaSSA(SSAValue):
     def __init__(self, block):
         self.block = block
 
-    def get_target_SSA(self) -> SSAValue:
+    def get_target_SSA(self) -> BaseSSA:
         raise Exception("Unimplemented!")
 
     def get_id(self) -> int:
@@ -196,7 +212,7 @@ class BlockFirstSSA(MetaSSA):
     def __init__(self, block):
         super().__init__(block)
 
-    def get_target_SSA(self) -> SSAValue:
+    def get_target_SSA(self) -> BaseSSA:
         assert self.block is not None
         targetSSA =  self.block.get_first_inst()
         if targetSSA is None:
@@ -208,7 +224,7 @@ class NextBlockFirstSSA(MetaSSA):
     def __init__(self, block):
         super().__init__(block)
 
-    def get_target_SSA(self) -> SSAValue:
+    def get_target_SSA(self) -> BaseSSA:
         assert self.block is not None
         assert self.block.next is not None
         targetSSA =  self.block.next.get_first_inst()

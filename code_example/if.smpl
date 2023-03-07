@@ -4,8 +4,12 @@ main
 		let a <- 3;
 		let b <- call InputNum();
 		if b > a then
-			call OutputNum(2);
+			let a <- c + 1;
 		else
-			call OutputNum(1);
+			call OutputNum(c);
+			let b <- a + 1;
 		fi;
+		call OutputNum(a);
+		call OutputNum(b);
+		call OutputNum(c);
 	}.

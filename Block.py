@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import List, Dict, Set
+import copy
 import SSA
 
 
@@ -39,16 +40,25 @@ class ValueTable:
         self.table = {}  # {identifier id: SSA inst}
 
     def has(self, ident: int) -> bool:
-        return ident in self.table
+        if ident in self.table:
+            assert self.table[ident].identifier == ident
+            return True
+        return False
 
     def set(self, ident: int, inst: SSA.Inst) -> None:
-        self.table[ident] = inst
+        _inst = copy.deepcopy(inst)
+        _inst.identifier = ident
+        self.table[ident] = _inst
 
     def get(self, ident: int) -> SSA.Inst:
+        assert self.table[ident].identifier == ident
         return self.table[ident]
 
     def update(self, __o: ValueTable) -> None:
         self.table.update(__o.table)
+
+    def get_ids(self) -> Set[int]:
+        return set(self.table.keys())
 
 
 class Block:
@@ -298,8 +308,8 @@ class SuperBlock(Block):
 
     def replace_operand(self, _from: SSA.Inst, _from_ident: int,
                         _to: SSA.Inst) -> None:
-        # TODO: Replace operands from head to tail
-        pass
+        for bb in self.get_bbs():
+            bb.replace_operand(_from, _from_ident, _to)
 
     def dot_name(self) -> str:
         return f"cluster_{self.id}"

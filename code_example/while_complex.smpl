@@ -7,6 +7,10 @@ main
 			let a <- a - b + c;
 			let b <- b + 1 + c;
 			call OutputNum(b);
+			while b > c do
+				let a <- 1;
+				let b <- 2;
+			od;
 		od;
 		call OutputNum(c);
 	}.

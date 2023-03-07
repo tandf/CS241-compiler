@@ -3,7 +3,7 @@ from typing import Callable, List, Tuple
 from functools import wraps
 from Block import *
 from IRVis import IRVis
-from SSA import SSAValue, Const, Inst, BlockFirstSSA, NextBlockFirstSSA
+from SSA import BaseSSA, Const, Inst, BlockFirstSSA, NextBlockFirstSSA
 from Types import *
 from Function import Function
 
@@ -137,15 +137,15 @@ class SmplCompiler:
 
     @_nonterminal
     def designator(self, context: SimpleBB,
-                   write: bool) -> Tuple[SSAValue, int, bool]:
+                   write: bool) -> Tuple[BaseSSA, int, bool]:
         # designator = ident{ "[" expression "]" }
 
-        # Return values: SSAValue see below, int: identifier id, bool: is array
+        # Return values: BaseSSA see below, int: identifier id, bool: is array
 
-        # Returned SSAValue:
-        # For scalars (write=False), return the SSAValue from the value table.
+        # Returned BaseSSA:
+        # For scalars (write=False), return the BaseSSA from the value table.
         # For arrays, first emit instructions to calculate the offset. Then
-        # return the SSAValue of the offset.
+        # return the BaseSSA of the offset.
 
         self._check_token(Token.IDENT, 'Expecting identifier at the beginning '
                           f'of designator, found {self.inputSym}')
@@ -173,7 +173,7 @@ class SmplCompiler:
         if dims:
             # TODO: Deal with array
             # 1. Compute the offset
-            # 2. Return the SSAValue for the offset
+            # 2. Return the BaseSSA for the offset
             return None, id, True
 
         # Scalar
@@ -190,11 +190,12 @@ class SmplCompiler:
                 else:
                     self.warning("Using uninitialized variable!", sym)
                     zero = SSA.Const.get_const(0)
+                    zero.identifier = id
                     context.get_value_table().set(id, zero)
                     return zero, id, False
 
     @_nonterminal
-    def factor(self, context: SimpleBB) -> SSAValue:
+    def factor(self, context: SimpleBB) -> BaseSSA:
         # factor = designator | number | "(" expression ")" | funcCall
 
         if self.inputSym.type == Token.IDENT:
@@ -227,7 +228,7 @@ class SmplCompiler:
                 f"Factor starts with unexpected token {self.inputSym}")
 
     @_nonterminal
-    def term(self, context: SimpleBB) -> SSAValue:
+    def term(self, context: SimpleBB) -> BaseSSA:
         # term = factor { ("*" | "/") factor}
 
         val = self.factor(context)
@@ -249,7 +250,7 @@ class SmplCompiler:
                 return val
 
     @_nonterminal
-    def expression(self, context: SimpleBB) -> SSAValue:
+    def expression(self, context: SimpleBB) -> BaseSSA:
         # expression = term {("+" | "-") term}
 
         val = self.term(context)
@@ -271,7 +272,7 @@ class SmplCompiler:
                 return val
 
     @_nonterminal
-    def relation(self, context: SimpleBB) -> Tuple[SSAValue, int]:
+    def relation(self, context: SimpleBB) -> Tuple[BaseSSA, int]:
         # relation = expression relOp expression
 
         operand1 = self.expression(context)
@@ -309,10 +310,11 @@ class SmplCompiler:
             pass
         else:
             # Update the mapping in the value table
+            src.identifier = id
             context.get_value_table().set(id, src)
 
     @_nonterminal
-    def funcCall(self, context: SimpleBB) -> SSAValue:
+    def funcCall(self, context: SimpleBB) -> BaseSSA:
         # funcCall = "call" ident [ "(" [expression { "," expression } ] ")" ]
 
         self._check_token(Token.CALL, 'Expecting keyword "call" at the '
@@ -368,6 +370,7 @@ class SmplCompiler:
 
         relBlock = BranchBB()
         connectBlock = JoinBB()
+        changed_variables = set()  # The variables changed in either branch
         relBlock.set_prev(lastBlock)
         superBlock.head = relBlock
         superBlock.tail = connectBlock
@@ -385,6 +388,7 @@ class SmplCompiler:
         ifBlock.set_next(connectBlock)
         relBlock.set_next(ifBlock)
         connectBlock.set_prev(ifBlock)
+        changed_variables.update(ifBlock.get_value_table().get_ids())
 
         # Branch to if block
         ifBraOp = SSA.OP._from_relop(relop)
@@ -399,6 +403,7 @@ class SmplCompiler:
             elseBlock.set_next(connectBlock)
             relBlock.branchBlock = elseBlock
             connectBlock.joiningBlock = elseBlock
+            changed_variables.update(elseBlock.get_value_table().get_ids())
 
             # Fall through to else block
             fallThroughBraInst = SSA.Inst(
@@ -411,10 +416,38 @@ class SmplCompiler:
         else:
             relBlock.branchBlock = connectBlock
             connectBlock.joiningBlock = relBlock
+
             # Fall through to connect block
             fallThroughBraInst = SSA.Inst(
                 SSA.OP.BRA, BlockFirstSSA(connectBlock))
             relBlock.add_inst(fallThroughBraInst)
+
+        # Add phi instructions
+        # 1. Find changed variables: value table from left (else) if any, and
+        # from right(if body) branch
+        # 2. For each variable, get SSA value from left and right
+        # 3. Insert phi(left, right) and update value table
+        left_block = connectBlock.joiningBlock
+        right_block = connectBlock.prev
+        for id in changed_variables:
+            id_name = self.tokenizer.id2string(id)
+            left = left_block.lookup_value_table(id)
+            right = right_block.lookup_value_table(id)
+
+            if left is None:
+                self.warning(f"Using uninitialized variable {id_name} in phi!")
+                left = SSA.Const.get_const(0)
+            if right is None:
+                self.warning(f"Using uninitialized variable {id_name} in phi!")
+                right = SSA.Const.get_const(0)
+
+            if left == right:
+                continue
+
+            phi = SSA.Inst(SSA.OP.PHI, left, right)
+            phi.identifier = id
+            connectBlock.add_inst(phi)
+            connectBlock.get_value_table().set(id, phi)
 
         self._check_token(Token.FI, 'Expecting "fi" at the end of ifStatement, '
                           f'found {self.inputSym}')
@@ -448,6 +481,7 @@ class SmplCompiler:
         bodyBlock = self.statSequence(relBlock)
         bodyBlock.name = "while body"
         bodyBlock.set_next(connectBlock)
+        changed_variables = bodyBlock.get_value_table().get_ids()
         connectBlock.joiningBlock = bodyBlock
         relBlock.branchBlock = bodyBlock
 
@@ -469,10 +503,42 @@ class SmplCompiler:
         bodyToJoinBraInst = SSA.Inst(SSA.OP.BRA, BlockFirstSSA(connectBlock))
         bodyBlock.get_lastbb().add_inst(bodyToJoinBraInst)
 
+        # : Add phi instructions
+        # 0. Annotate SSA value with variable name in assignments
+        # 1. Find changed variables: must from left (while body) branch
+        # 2. For each variable, get SSA value from left and right
+        # 3. Insert phi(left, right) and update value table
+        # 4. Change SSA values used in the rel block and the while body block
+        left_block = connectBlock.joiningBlock
+        right_block = connectBlock.prev
+        for id in changed_variables:
+            id_name = self.tokenizer.id2string(id)
+            left = left_block.lookup_value_table(id)
+            right = right_block.lookup_value_table(id)
+
+            # The changed variable must have been changed in the while body
+            assert left is not None
+            if right is None:
+                self.warning(f"Using uninitialized variable {id_name} in phi!")
+                right = SSA.Const.get_const(0)
+
+            if left == right:
+                continue
+
+            phi = SSA.Inst(SSA.OP.PHI, left, right)
+            phi.identifier = id
+            connectBlock.add_inst(phi)
+            connectBlock.get_value_table().set(id, phi)
+
+            # Change SSA values for id in rel block and while body block from
+            # original SSA (that from before while, i.e. right) to phi
+            relBlock.replace_operand(right, id, phi)
+            bodyBlock.replace_operand(right, id, phi)
+
         return superBlock
 
     @_nonterminal
-    def returnStatement(self, context: SimpleBB) -> SSAValue:
+    def returnStatement(self, context: SimpleBB) -> BaseSSA:
         # returnStatement = "return" [ expression ]
 
         self._check_token(Token.RETURN, 'Expecting "return" at the begining of '
