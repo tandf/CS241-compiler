@@ -72,8 +72,8 @@ class Const(SSAValue):
         self.num = num
         Const.ALL_CONST.append(self)
 
-    def to_str(self, dot_style: bool = False) -> str:
-        s = f'<font color="#FF69B4"><b>{self.get_id()}</b></font>' \
+    def to_str(self, dot_style: bool = False, color: str = "black") -> str:
+        s = f'<font color="{color}"><b>{self.get_id()}</b></font>' \
             if dot_style else f"{self.get_id()}"
         s += f": const #{self.num}"
         return s
@@ -138,12 +138,19 @@ class OP(Enum):
         assert relop in _RELOP_TABLE
         return _RELOP_TABLE[relop]
 
+    def is_commutative(self) -> bool:
+        return self in OP.COMMUTATIVE_OP
+
+
+OP.COMMUTATIVE_OP = {OP.ADD, OP.MUL}
+OP.IO_OP = {OP.READ, OP.WRITE, OP.WRITENL}
+OP.BRANCH_OP = {OP.BRA, OP.BNE, OP.BEQ, OP.BLE, OP.BLT, OP.BGE, OP.BGT}
+
 
 class Inst(SSAValue):
     op: OP
     x: BaseSSA
     y: BaseSSA
-    common_subexpression: Inst
     op_last_inst: Inst
 
     def __init__(self, op: OP, x: Inst = None, y: Inst = None,
@@ -153,34 +160,43 @@ class Inst(SSAValue):
         self.op = op
         self.x = x
         self.y = y
-        self.common_subexpression = None
         # Last SSA instruction with the same op
         self.op_last_inst = op_last_inst
 
-    def to_str(self, dot_style: bool = False) -> str:
-        s = f'<font color="#FF69B4"><b>{self.get_id()}</b></font>' \
+    def to_str(self, dot_style: bool = False, color: str = "black") -> str:
+        s = f'<font color="{color}"><b>{self.get_id(cse=False)}</b></font>' \
             if dot_style else f"{self.get_id()}"
         s += f": {self.op}"
         if self.x:
             s += f" ({self.x.get_id()})"
         if self.y:
             s += f" ({self.y.get_id()})"
-        if self.common_subexpression:
-            s += f" (cs: {self.common_subexpression.get_id()})"
+        #  s += f" (last: {self.op_last_inst.get_id() if self.op_last_inst else 'None'})"
+        cs = self.get_cs()
+        if cs:
+            s += f' <font color="red">[cs: {cs.get_id()}]</font>' \
+                if dot_style else f' [cs: {cs.get_id()}]'
         return s
 
     def __str__(self) -> str:
         return self.to_str(dot_style=False)
 
-    def is_common_subexpression(self, __o: Inst,
-                                commutative: bool = False) -> bool:
+    def is_common_subexpression(self, __o: Inst) -> bool:
         if self.op != __o.op:
             return False
         if self.x == __o.x and self.y == __o.y:
             return True
-        elif commutative and self.x == __o.y and self.y == __o.x:
+        elif self.op.is_commutative() and self.x == __o.y and self.y == __o.x:
             return True
         return False
+
+    def get_cs(self) -> Inst:
+        inst = self.op_last_inst
+        while inst is not None:
+            if self.is_common_subexpression(inst):
+                return inst
+            inst = inst.op_last_inst
+        return None
 
     def replace_operand(self, _from: Inst, _from_ident: int, _to: Inst) -> None:
         if self.x is not None and isinstance(self.x, SSAValue) and \
@@ -189,6 +205,12 @@ class Inst(SSAValue):
         if self.y is not None and isinstance(self.y, SSAValue) and \
                 self.y == _from and self.y.identifier == _from_ident:
             self.y = _to
+
+    def get_id(self, cse: bool = True) -> int:
+        if cse and self.get_cs() is not None:
+            return self.get_cs().get_id()
+        else:
+            return super().get_id()
 
 
 class MetaSSA(BaseSSA):

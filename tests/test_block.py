@@ -17,7 +17,7 @@ class TestBlock(unittest.TestCase):
         return super().setUp()
 
     def test_commonsubexpressiontable(self):
-        cs_table = CommonSubexpressionTable()
+        cs_table = CSTable()
 
         i1 = SSA.Inst(SSA.OP.READ, op_last_inst=cs_table.get(SSA.OP.READ))
         cs = cs_table.search(i1)
@@ -68,7 +68,7 @@ class TestBlock(unittest.TestCase):
     def test_valuetable(self):
         valueTable = ValueTable()
         valueTable2 = ValueTable()
-        cs_table = CommonSubexpressionTable()
+        cs_table = CSTable()
 
         i1 = SSA.Inst(SSA.OP.READ, op_last_inst=cs_table.get(SSA.OP.READ))
         i2 = SSA.Inst(SSA.OP.READ, op_last_inst=cs_table.get(SSA.OP.READ))

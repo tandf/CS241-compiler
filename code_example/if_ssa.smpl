@@ -1,0 +1,17 @@
+main
+	var a, b, c;
+	{
+		let a <- 3;
+		let b <- call InputNum();
+		let c <- 1 + a;
+		if b + 1 > a + 1 then
+			call OutputNum(a + 1);
+			call OutputNum(c + 1);
+		else
+			call OutputNum(b + 1);
+			let b <- c + 1;
+		fi;
+		call OutputNum(a + 1);
+		call OutputNum(b + 1);
+		call OutputNum(c + 1);
+	}.

@@ -11,7 +11,10 @@ def getArgs():
     parser = argparse.ArgumentParser(description="SMPL compiler")
     parser.add_argument("-i", dest="src", type=str,
                         required=True, help="source file")
-    parser.add_argument("-d", dest="debug", type=str, help="debug output")
+    parser.add_argument("-d", dest="debug", type=str,
+                        help="debug output from the tokenizer")
+    parser.add_argument("-v", action="store_true",
+                        dest="verbose", default=False, help="verbose mode")
     return parser.parse_args()
 
 
@@ -28,7 +31,7 @@ def main() -> None:
     # Visualiation of blocks
     vis_file = os.path.join(
         "graph", os.path.splitext(os.path.basename(args.src))[0] + ".dot")
-    vis = IRVis(filename=vis_file)
+    vis = IRVis(filename=vis_file, debug=args.verbose)
     vis.block(smplCompiler.computationBlock)
     vis.render()
 

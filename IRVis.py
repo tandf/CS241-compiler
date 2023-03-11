@@ -4,31 +4,41 @@ import SSA
 
 class IRVis:
     g: Digraph
+    debug: bool
     # TODO: block domination
 
-    def __init__(self, filename: str = "graph/out.dot") -> None:
+    branch_edge_color = "#D2691E"
+    falltrhough_edge_color = "#00BFFF"
+    superblock_color = "#40E0D0"
+    instid_color = "#FF69B4"
+
+    def __init__(self, filename: str = "graph/out.dot",
+                 debug: bool = False) -> None:
         self._graph = Digraph('structs', filename=filename,
                                        node_attr={'shape': 'record'})
+        self.debug = debug
 
     def _edge(self, src: BasicBlock, dst: BasicBlock) -> None:
         self._graph.edge(src.dot_name() + ":s", dst.dot_name() + ":n")
 
     def _edge_branch(self, src: BasicBlock, dst: BasicBlock) -> None:
-        color = "#D2691E"
         self._graph.edge(src.dot_name() + ":s", dst.dot_name() + ":n",
-                         label="branch", color=color, fontcolor=color)
+                         label="branch",
+                         color=IRVis.branch_edge_color,
+                         fontcolor=IRVis.branch_edge_color)
 
     def _edge_fallthrough(self, src: BasicBlock, dst: BasicBlock) -> None:
-        color = "#00BFFF"
         self._graph.edge(src.dot_name() + ":s", dst.dot_name() + ":n",
-                         label="fall through", color=color, fontcolor=color)
+                         label="fall through",
+                         color=IRVis.falltrhough_edge_color,
+                         fontcolor=IRVis.falltrhough_edge_color)
 
     def _superBlock(self, sb: SuperBlock, g: Digraph) -> Set[BasicBlock]:
         # Draw clusters for super blocks
 
         with g.subgraph(name=sb.dot_name()) as c:
-            c.attr(color="#40E0D0", style="dashed",
-                   label=sb.dot_label(), fontcolor="#40E0D0")
+            c.attr(color=IRVis.superblock_color, style="dashed",
+                   label=sb.dot_label(), fontcolor=IRVis.superblock_color)
 
             visited = set()
             block = sb.head
@@ -54,10 +64,16 @@ class IRVis:
             return sb.get_bbs()
 
     def _basicBlock(self, b: BasicBlock, g: Digraph) -> None:
-        g.node(b.dot_name(), b.dot_label())
+        g.node(b.dot_name(), b.dot_label(
+            IRVis.instid_color, cse=not self.debug))
 
     def _basicBlockEdges(self, b: BasicBlock) -> None:
         next = b.next_bb()
+        # Check if this is the end block
+        if next is None:
+            return
+
+        assert isinstance(next, BasicBlock)
 
         if isinstance(b, BranchBB):
             if next:
@@ -67,8 +83,7 @@ class IRVis:
                 self._edge_fallthrough(b, branchBB)
 
         # Normal blocks
-        else:
-            if next:
+        elif next is not None:
                 self._edge(b, next)
 
         # TODO: also draw back edges to make sure everything is correct

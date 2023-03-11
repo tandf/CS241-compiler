@@ -303,7 +303,7 @@ class SmplCompiler:
                           f'found {self.inputSym}')
         self.next()
 
-        src = self.expression(context)
+        src = copy.deepcopy(self.expression(context))
 
         if is_array:
             # TODO: Store value to array
@@ -362,11 +362,8 @@ class SmplCompiler:
             self.error("Calling undefined function!", sym)
 
     @_nonterminal
-    def ifStatement(self, lastBlock: Block) -> SuperBlock:
+    def ifStatement(self, lastBlock: Block, superBlock: SuperBlock) -> SuperBlock:
         # ifStatement = "if" relation "then" statSequence [ "else" statSequence ] "fi"
-
-        superBlock = SuperBlock("if statement")
-        superBlock.set_prev(lastBlock)
 
         relBlock = BranchBB()
         connectBlock = JoinBB()
@@ -374,6 +371,7 @@ class SmplCompiler:
         relBlock.set_prev(lastBlock)
         superBlock.head = relBlock
         superBlock.tail = connectBlock
+        connectBlock.last_cs_block = relBlock
 
         self._check_token(Token.IF, 'Expecting "if" at the begining of '
                           f'ifStatement, found {self.inputSym}')
@@ -383,11 +381,14 @@ class SmplCompiler:
         self._check_token(Token.THEN, 'Expecting "then" in ifStatement, found '
                           f'{self.inputSym}')
         self.next()
-        ifBlock = self.statSequence(relBlock)
+        # Setting up the context
+        ifBlock = SuperBlock()
         ifBlock.name = "if body"
-        ifBlock.set_next(connectBlock)
         relBlock.set_next(ifBlock)
         connectBlock.set_prev(ifBlock)
+        # Process the statement sequence
+        self.statSequence(relBlock, ifBlock)
+        ifBlock.set_next(connectBlock)
         changed_variables.update(ifBlock.get_value_table().get_ids())
 
         # Branch to if block
@@ -398,11 +399,14 @@ class SmplCompiler:
 
         if self.inputSym.type == Token.ELSE:
             self.next()
-            elseBlock = self.statSequence(relBlock)
+            # Setting up the context
+            elseBlock = SuperBlock()
             elseBlock.name = "else body"
-            elseBlock.set_next(connectBlock)
             relBlock.branchBlock = elseBlock
             connectBlock.joiningBlock = elseBlock
+            # Process the statement sequence
+            self.statSequence(relBlock, elseBlock)
+            elseBlock.set_next(connectBlock)
             changed_variables.update(elseBlock.get_value_table().get_ids())
 
             # Branch from the end of else block to connect block
@@ -452,11 +456,9 @@ class SmplCompiler:
         return superBlock
 
     @_nonterminal
-    def whileStatement(self, lastBlock: Block) -> SuperBlock:
+    def whileStatement(self, lastBlock: Block,
+                       superBlock: SuperBlock) -> SuperBlock:
         # whileStatement = "while" relation "do" StatSequence "od"
-
-        superBlock = SuperBlock("while statement")
-        superBlock.set_prev(lastBlock)
 
         connectBlock = JoinBB()
         relBlock = BranchBB()
@@ -474,12 +476,15 @@ class SmplCompiler:
         self._check_token(Token.DO, 'Expecting "do" in whileStatement, found '
                           f'{self.inputSym}')
         self.next()
-        bodyBlock = self.statSequence(relBlock)
+        # Setting up the context
+        bodyBlock = SuperBlock()
         bodyBlock.name = "while body"
-        bodyBlock.set_next(connectBlock)
-        changed_variables = bodyBlock.get_value_table().get_ids()
         connectBlock.joiningBlock = bodyBlock
         relBlock.branchBlock = bodyBlock
+        # Process the statement sequence
+        self.statSequence(relBlock, bodyBlock)
+        bodyBlock.set_next(connectBlock)
+        changed_variables = bodyBlock.get_value_table().get_ids()
 
         self._check_token(Token.OD, 'Expecting "od" at the end of whileStatement, '
                           f'found {self.inputSym}')
@@ -567,11 +572,15 @@ class SmplCompiler:
             return context
 
         elif self.inputSym.type == Token.IF:
-            ifBlock = self.ifStatement(lastBlock)
+            ifBlock = SuperBlock("if statement")
+            ifBlock.set_prev(lastBlock)
+            self.ifStatement(lastBlock, ifBlock)
             return ifBlock
 
         elif self.inputSym.type == Token.WHILE:
-            whileBlock = self.whileStatement(lastBlock)
+            whileBlock = SuperBlock("while statement")
+            whileBlock.set_prev(lastBlock)
+            self.whileStatement(lastBlock, whileBlock)
             return whileBlock
 
         elif self.inputSym.type == Token.RETURN:
@@ -583,10 +592,9 @@ class SmplCompiler:
             raise Exception(f'Expecting statment, found {self.inputSym}')
 
     @_nonterminal
-    def statSequence(self, lastBlock: Block) -> SuperBlock:
+    def statSequence(self, lastBlock: Block, superBlock: SuperBlock):
         # statSequence = statement { ";" statement } [ ";" ]
 
-        superBlock = SuperBlock()
         superBlock.set_prev(lastBlock)
 
         statement_tokens = [Token.LET, Token.CALL,
@@ -617,8 +625,6 @@ class SmplCompiler:
                 self.next()
             else:
                 break
-
-        return superBlock
 
     @_nonterminal
     def typeDecl(self) -> VarType:
@@ -771,14 +777,19 @@ class SmplCompiler:
             Token.BEGIN, 'Expecting "{", found ' + f'{self.inputSym}')
         self.next()
         
-        # Create const block
+        # Create blocks
         constBlock = SimpleBB()
         endBlock = SimpleBB()
-        mainBlock = self.statSequence(constBlock)
+        mainBlock = SuperBlock()
         mainBlock.name = "main function"
+        constBlock.set_prev(constBlock)  # To itself, meaning the first
         constBlock.set_next(mainBlock)
-        mainBlock.set_next(endBlock)
         endBlock.set_prev(mainBlock)
+        endBlock.set_next(endBlock)  # To itself, meaning the last
+        # Process the statement sequence
+        self.statSequence(constBlock, mainBlock)
+        mainBlock.set_next(endBlock)
+        endBlock.add_inst(SSA.Inst(SSA.OP.END))
 
         self._check_token(
             Token.END, 'Expecting "}", found ' + f'{self.inputSym}')
@@ -795,6 +806,3 @@ class SmplCompiler:
 
         for const_ir in SSA.Const.ALL_CONST:
             constBlock.add_inst(const_ir)
-
-        return
-

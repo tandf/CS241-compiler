@@ -4,16 +4,18 @@ import copy
 import SSA
 
 
-class CommonSubexpressionTable:
+class CSTable:
     table: Dict[SSA.OP, SSA.Inst]
 
-    BLACK_LIST = {SSA.OP.READ, SSA.OP.WRITE, SSA.OP.WRITENL}
+    BLACK_LIST = SSA.OP.IO_OP | SSA.OP.BRANCH_OP | {SSA.OP.PHI}
 
     def __init__(self):
         self.table = {op: None for op in SSA.OP}
 
-    def set(self, op: SSA.OP, inst: SSA.Inst) -> None:
-        if op in CommonSubexpressionTable.BLACK_LIST:
+    def add_inst(self, inst: SSA.Inst, op: SSA.OP = None) -> None:
+        op = op if op else inst.op
+        assert op in SSA.OP, f"Adding unknown OP {op} to cs table!"
+        if op in CSTable.BLACK_LIST:
             # Some instructions have side effects and cannot be eliminated
             return
         self.table[op] = inst
@@ -22,15 +24,11 @@ class CommonSubexpressionTable:
         assert(op in self.table)
         return self.table[op]
 
-    def search(self, inst: SSA.Inst) -> SSA.Inst:
-        head = self.table[inst.op]
-        while head:
-            if head.is_common_subexpression(inst):
-                if head.common_subexpression:
-                    head = head.common_subexpression
-                break
-            head = head.op_last_inst
-        return head
+    def __str__(self) -> str:
+        return str(self.table)
+
+    def __repr__(self) -> str:
+        return self.__str__()
 
 
 class ValueTable:
@@ -94,19 +92,41 @@ class Block:
     def set_next(self, block: Block) -> None:
         self.next = block
 
-    def prev_bb(self) -> BasicBlock:
+    def _prev_bb(self) -> BasicBlock:
         # Return prev basic block.
+        if self.prev is None:
+            return self.prev
         if isinstance(self.prev, SuperBlock):
             return self.prev.get_lastbb()
         else:
             return self.prev
 
-    def next_bb(self) -> BasicBlock:
+    def prev_bb(self) -> BasicBlock:
+        bb = self._prev_bb()
+        assert bb is not None, \
+            "The BasicBlock is not well connected: no prev_bb found!"
+        if bb == self:
+            return None
+        else:
+            return bb
+
+    def _next_bb(self) -> BasicBlock:
         # Return next basic block.
+        if self.next is None:
+            return self.next
         if isinstance(self.next, SuperBlock):
             return self.next.get_firstbb()
         else:
             return self.next
+
+    def next_bb(self) -> BasicBlock:
+        bb = self._next_bb()
+        assert bb is not None, \
+            "The BasicBlock is not well connected: no next_bb found!"
+        if bb == self:
+            return None
+        else:
+            return bb
 
     def get_value_table(self) -> ValueTable:
         # Value table at the end of the block. Can reflect the new assignments.
@@ -137,7 +157,8 @@ class Block:
 
 class BasicBlock(Block):
     value_table: ValueTable
-    cs_table: CommonSubexpressionTable
+    last_cs_block: BasicBlock
+    cs_table: CSTable
     insts: List[SSA.Inst]
     bbid: int
 
@@ -150,7 +171,8 @@ class BasicBlock(Block):
     def __init__(self):
         super().__init__()
         self.value_table = ValueTable()
-        self.cs_table = CommonSubexpressionTable()
+        self.last_cs_block = None
+        self.cs_table = CSTable()
         self.insts = []
 
         # Unique basic block id
@@ -158,17 +180,51 @@ class BasicBlock(Block):
         BasicBlock.CNT += 1
         BasicBlock.ALL_BB.append(self)
 
+    def get_prev_cs_bb(self) -> BasicBlock:
+        # If returns None, means this is the first block
+        if self.last_cs_block:
+            return self.last_cs_block
+        else:
+            return self.prev_bb()
+
     def get_value_table(self) -> ValueTable:
         return self.value_table
 
-    def get_first_inst(self) -> SSA.Inst:
-        if self.insts:
-            return self.insts[0]
+    def get_insts(self, cse: bool = True) -> List[SSA.SSAValue]:
+        if cse:
+            return [inst for inst in self.insts
+                    if not isinstance(inst, SSA.Inst) or inst.get_cs() is None]
+        else:
+            return self.insts
+
+    def get_first_inst(self, cse: bool = True) -> SSA.Inst:
+        insts = self.get_insts(cse=cse)
+        if insts:
+            return insts[0]
         else:
             return None
 
-    def add_inst(self, inst: SSA.Inst) -> None:
-        self.insts.append(inst)
+    def update_cs_table(self, op: SSA.OP, inst: SSA.Inst) -> None:
+        # Link the instruction in the cs table
+
+        # TODO: kill inst for array operations
+
+        # Find last inst from last_cs_block
+        bb = self
+        op_last_inst = None
+        while bb is not None:
+            op_last_inst = bb.cs_table.get(inst.op)
+            if op_last_inst is not None:
+                break
+            bb = bb.get_prev_cs_bb()
+
+        inst.op_last_inst = op_last_inst
+        self.cs_table.add_inst(inst)
+
+    def add_inst(self, ssa: SSA.SSAValue) -> None:
+        if isinstance(ssa, SSA.Inst):
+            self.update_cs_table(ssa.op, ssa)
+        self.insts.append(ssa)
 
     def add_nop(self) -> SSA.Inst:
         nop = SSA.Inst(SSA.OP.NOP)
@@ -189,10 +245,11 @@ class BasicBlock(Block):
     def dot_name(self) -> str:
         return f"BB{self.bbid}"
 
-    def dot_label(self) -> str:
-        if self.insts:
-            insts_str = "|".join([inst.to_str(dot_style=True)
-                                 for inst in self.insts])
+    def dot_label(self, color: str = "black", cse: bool = True) -> str:
+        insts = self.get_insts(cse=cse)
+        if insts:
+            insts_str = "|".join([inst.to_str(dot_style=True, color=color)
+                                 for inst in insts])
         else:
             insts_str = "empty"
         return f"<<b>BB{self.bbid}</b> | {{{insts_str}}}>"

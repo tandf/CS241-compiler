@@ -1,0 +1,15 @@
+main
+	var a, b, c;
+	{
+		let a <- 1;
+		let b <- call InputNum();
+		let c <- b + a;
+		while a + 1 > b + 1 do
+			let a <- b + a + 1;
+			let b <- b + 1 + c;
+			call OutputNum(b);
+		od;
+		call OutputNum(a + 1);
+		call OutputNum(b + 1);
+		call OutputNum(c + 1);
+	}.
