@@ -182,7 +182,7 @@ class OP(Enum):
 OP.COMMUTATIVE_OP = {OP.ADD, OP.MUL}
 OP.IO_OP = {OP.READ, OP.WRITE, OP.WRITENL}
 OP.BRANCH_OP = {OP.BRA, OP.BNE, OP.BEQ, OP.BLE, OP.BLT, OP.BGE, OP.BGT}
-OP.MEM_OP = {OP.ADDA, OP.LOAD, OP.STORE}
+OP.MEM_OP = {OP.LOAD, OP.STORE}
 
 
 class Inst(SSAValue):
@@ -191,6 +191,7 @@ class Inst(SSAValue):
     y: BaseSSA
     op_last_inst: Inst
     cs: Inst
+    _get_cs_flag: bool
 
     def __init__(self, op: OP, x: Inst = None, y: Inst = None,
                  op_last_inst: Inst = None):
@@ -204,6 +205,7 @@ class Inst(SSAValue):
         # Last SSA instruction with the same op
         self.op_last_inst = op_last_inst
         self.cs = None
+        self._get_cs_flag = False
 
     def to_str(self, dot_style: bool = False, color: str = "black") -> str:
         s = f'<font color="{color}"><b>{self.get_id(cse=False)}</b></font>' \
@@ -234,12 +236,22 @@ class Inst(SSAValue):
             return True
         return False
 
+    def is_cs_kill(self, __o: BaseSSA) -> bool:
+        if not isinstance(__o, Inst):
+            return False
+        if self.op not in OP.MEM_OP or __o.op != OP.STORE:
+            return False
+        return self.identifier == __o.identifier
+
     def get_cs(self) -> Inst:
-        if self.cs is None:
+        if not self._get_cs_flag:
+            self._get_cs_flag = True
             inst = self.op_last_inst
             while inst is not None:
                 if self.is_common_subexpression(inst):
                     self.cs = inst
+                    break
+                if self.is_cs_kill(inst):
                     break
                 inst = inst.op_last_inst
         return self.cs

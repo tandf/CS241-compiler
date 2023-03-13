@@ -172,6 +172,7 @@ class SmplCompiler:
             # Compute the offset
             offset = None
             for idx, limit in zip(dims, _type.dims):
+                assert idx.num < limit, "Array index out of bound!"
                 if offset is not None:
                     offset = SSA.Inst(SSA.OP.MUL, offset,
                                       SSA.Const.get_const(limit))
@@ -335,7 +336,7 @@ class SmplCompiler:
 
             # Store value to array
             store = SSA.Inst(SSA.OP.STORE, src, address)
-            store.id = id
+            store.identifier = id
             context.add_inst(store)
 
         else:

@@ -10,18 +10,15 @@ class CSTable:
     BLACK_LIST = SSA.OP.IO_OP | SSA.OP.BRANCH_OP | {SSA.OP.PHI}
 
     def __init__(self):
-        self.table = {op: None for op in SSA.OP}
+        self.table = {op: None for op in set(SSA.OP) - CSTable.BLACK_LIST}
+        del self.table[SSA.OP.STORE]
 
-    def add_inst(self, inst: SSA.Inst, op: SSA.OP = None) -> None:
-        op = op if op else inst.op
-        assert op in SSA.OP, f"Adding unknown OP {op} to cs table!"
-        if op in CSTable.BLACK_LIST:
-            # Some instructions have side effects and cannot be eliminated
-            return
+    def add_inst(self, inst: SSA.Inst, op: SSA.OP) -> None:
+        assert op in self.table, f"Adding unknown OP {op} to cs table!"
         self.table[op] = inst
 
     def get(self, op: SSA.OP) -> SSA.Inst:
-        assert(op in self.table)
+        assert op in self.table, f"Cannot get op: {op} not in cs table!"
         return self.table[op]
 
     def __str__(self) -> str:
@@ -206,8 +203,17 @@ class BasicBlock(Block):
         else:
             return None
 
-    def update_cs_table(self, op: SSA.OP, inst: SSA.Inst) -> None:
+    def _update_cs_table(self, inst: SSA.Inst) -> None:
         # Link the instruction in the cs table
+        op = inst.op
+
+        # Ignore some of the instructions
+        if op in CSTable.BLACK_LIST:
+            return
+
+        # Store list is merged with the load list to perform kills
+        if op == SSA.OP.STORE:
+            op = SSA.OP.LOAD
 
         # TODO: kill inst for array operations
 
@@ -215,17 +221,17 @@ class BasicBlock(Block):
         bb = self
         op_last_inst = None
         while bb is not None:
-            op_last_inst = bb.cs_table.get(inst.op)
+            op_last_inst = bb.cs_table.get(op)
             if op_last_inst is not None:
                 break
             bb = bb.get_prev_cs_bb()
 
         inst.op_last_inst = op_last_inst
-        self.cs_table.add_inst(inst)
+        self.cs_table.add_inst(inst, op)
 
     def add_inst(self, ssa: SSA.SSAValue) -> None:
         if isinstance(ssa, SSA.Inst):
-            self.update_cs_table(ssa.op, ssa)
+            self._update_cs_table(ssa)
         self.insts.append(ssa)
 
     def add_nop(self) -> SSA.Inst:
