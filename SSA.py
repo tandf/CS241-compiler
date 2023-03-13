@@ -43,6 +43,36 @@ class BaseSSA:
         return __o and self.get_id() == __o.get_id()
 
 
+class FramePointer(BaseSSA):
+    offset: int
+
+    _instance = None
+    _initialized = False
+
+    def __new__(cls) -> FramePointer:
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __init__(self):
+        if not FramePointer._initialized:
+            super().__init__()
+            self.offset = 0
+        FramePointer._initialized = True
+
+    def __str__(self) -> str:
+        return self.to_str(dot_style=False)
+
+    def increment(self, offset: int) -> None:
+        self.offset += offset
+
+    def to_str(self, dot_style: bool = False, color: str = "black") -> str:
+        s = f'<font color="{color}"><b>{self.get_id()}</b></font>' \
+            if dot_style else f"{self.get_id()}"
+        s += f": FP"
+        return s
+
+
 class SSAValue(BaseSSA):
     identifier: int
 
@@ -55,12 +85,12 @@ class SSAValue(BaseSSA):
         # inserting phi in while blocks
         self.identifier = None
 
-
 class Const(SSAValue):
     ALL_CONST: List[Const]
 
     # A list of all defined const values
     ALL_CONST = []
+    constBlock = None
 
     @classmethod
     def _init(cls) -> None:
@@ -82,11 +112,18 @@ class Const(SSAValue):
         return self.to_str(dot_style=False)
 
     @classmethod
-    def get_const(cls, num) -> Const:
-        for const in cls.ALL_CONST:
-            if const.num == num:
-                return copy.deepcopy(const)
-        return Const(num)
+    def get_const(cls, num: int) -> Const:
+        # Find constant value from created constants
+        for c in cls.ALL_CONST:
+            if c.num == num:
+                return copy.deepcopy(c)
+
+        # Create if not found
+        const = Const(num)
+        # Add to const block
+        if cls.constBlock is not None:
+            cls.constBlock.add_inst(const)
+        return const
 
 
 class OP(Enum):
@@ -145,6 +182,7 @@ class OP(Enum):
 OP.COMMUTATIVE_OP = {OP.ADD, OP.MUL}
 OP.IO_OP = {OP.READ, OP.WRITE, OP.WRITENL}
 OP.BRANCH_OP = {OP.BRA, OP.BNE, OP.BEQ, OP.BLE, OP.BLT, OP.BGE, OP.BGT}
+OP.MEM_OP = {OP.ADDA, OP.LOAD, OP.STORE}
 
 
 class Inst(SSAValue):
@@ -152,16 +190,20 @@ class Inst(SSAValue):
     x: BaseSSA
     y: BaseSSA
     op_last_inst: Inst
+    cs: Inst
 
     def __init__(self, op: OP, x: Inst = None, y: Inst = None,
                  op_last_inst: Inst = None):
         super().__init__()
+        assert x is None or isinstance(x, BaseSSA)
+        assert y is None or isinstance(y, BaseSSA)
 
         self.op = op
         self.x = x
         self.y = y
         # Last SSA instruction with the same op
         self.op_last_inst = op_last_inst
+        self.cs = None
 
     def to_str(self, dot_style: bool = False, color: str = "black") -> str:
         s = f'<font color="{color}"><b>{self.get_id(cse=False)}</b></font>' \
@@ -181,7 +223,9 @@ class Inst(SSAValue):
     def __str__(self) -> str:
         return self.to_str(dot_style=False)
 
-    def is_common_subexpression(self, __o: Inst) -> bool:
+    def is_common_subexpression(self, __o: BaseSSA) -> bool:
+        if not isinstance(__o, Inst):
+            return False
         if self.op != __o.op:
             return False
         if self.x == __o.x and self.y == __o.y:
@@ -191,12 +235,14 @@ class Inst(SSAValue):
         return False
 
     def get_cs(self) -> Inst:
-        inst = self.op_last_inst
-        while inst is not None:
-            if self.is_common_subexpression(inst):
-                return inst
-            inst = inst.op_last_inst
-        return None
+        if self.cs is None:
+            inst = self.op_last_inst
+            while inst is not None:
+                if self.is_common_subexpression(inst):
+                    self.cs = inst
+                    break
+                inst = inst.op_last_inst
+        return self.cs
 
     def replace_operand(self, _from: Inst, _from_ident: int, _to: Inst) -> None:
         if self.x is not None and isinstance(self.x, SSAValue) and \

@@ -134,10 +134,12 @@ class Block:
 
     def lookup_value_table(self, id: int) -> SSA.SSAValue:
         block = self
-        while block != None:
+        while True:
             value_table = block.get_value_table()
             if value_table.has(id):
                 return value_table.get(id)
+            if block.prev == block:
+                return None
             block = block.prev
         return None
 

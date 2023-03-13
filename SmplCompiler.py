@@ -2,8 +2,7 @@ from Tokenizer import Tokenizer, Token
 from typing import Callable, List, Tuple
 from functools import wraps
 from Block import *
-from IRVis import IRVis
-from SSA import BaseSSA, Const, Inst, BlockFirstSSA, NextBlockFirstSSA
+from SSA import FramePointer, Const, SSAValue, BlockFirstSSA, NextBlockFirstSSA
 from Types import *
 from Function import Function
 
@@ -137,7 +136,7 @@ class SmplCompiler:
 
     @_nonterminal
     def designator(self, context: SimpleBB,
-                   write: bool) -> Tuple[BaseSSA, int, bool]:
+                   write: bool) -> Tuple[SSAValue, int, bool]:
         # designator = ident{ "[" expression "]" }
 
         # Return values: BaseSSA see below, int: identifier id, bool: is array
@@ -145,14 +144,14 @@ class SmplCompiler:
         # Returned BaseSSA:
         # For scalars (write=False), return the BaseSSA from the value table.
         # For arrays, first emit instructions to calculate the offset. Then
-        # return the BaseSSA of the offset.
+        # return the address of the element.
 
         self._check_token(Token.IDENT, 'Expecting identifier at the beginning '
                           f'of designator, found {self.inputSym}')
 
         sym = self.inputSym
         id = self.tokenizer.id
-        type = self.variable_types[id]
+        _type = self.variable_types[id]
 
         self.next()
 
@@ -160,8 +159,7 @@ class SmplCompiler:
         while self.inputSym.type == Token.OPENBRACKET:
             self.next()
 
-            # TODO: Get array dimension(s) and combine them based on the
-            # variable type
+            # Get array dimension(s)
             dim = self.expression(context)
             dims.append(dim)
 
@@ -171,14 +169,28 @@ class SmplCompiler:
 
         # Array
         if dims:
-            # TODO: Deal with array
-            # 1. Compute the offset
-            # 2. Return the BaseSSA for the offset
-            return None, id, True
+            # Compute the offset
+            offset = None
+            for idx, limit in zip(dims, _type.dims):
+                if offset is not None:
+                    offset = SSA.Inst(SSA.OP.MUL, offset,
+                                      SSA.Const.get_const(limit))
+                    context.add_inst(offset)
+                    offset = SSA.Inst(SSA.OP.ADD, offset, idx)
+                    context.add_inst(offset)
+                else:
+                    offset = idx
+
+            # Scale by 4 (assuming each array element takes 4 bytes)
+            offset = SSA.Inst(SSA.OP.MUL, offset, SSA.Const.get_const(4))
+            context.add_inst(offset)
+
+            # Return the SSAValue on the target address
+            return offset, id, True
 
         # Scalar
         else:
-            assert type == VarType.Scalar()
+            assert _type == VarType.Scalar()
             if write:
                 return None, id, False
 
@@ -195,14 +207,23 @@ class SmplCompiler:
                     return zero, id, False
 
     @_nonterminal
-    def factor(self, context: SimpleBB) -> BaseSSA:
+    def factor(self, context: SimpleBB) -> SSAValue:
         # factor = designator | number | "(" expression ")" | funcCall
 
         if self.inputSym.type == Token.IDENT:
             ret, id, is_array = self.designator(context, write=False)
             if is_array:
-                # TODO: Load from the offset (ret)
-                pass
+                # Calculate the element address based on the array's address
+                base = context.lookup_value_table(id)
+                assert base is not None
+                address = SSA.Inst(SSA.OP.ADDA, base, ret)
+                context.add_inst(address)
+
+                # Load from the address (ret)
+                load = SSA.Inst(SSA.OP.LOAD, address)
+                load.identifier = id
+                context.add_inst(load)
+                return load
             else:
                 return ret
 
@@ -228,7 +249,7 @@ class SmplCompiler:
                 f"Factor starts with unexpected token {self.inputSym}")
 
     @_nonterminal
-    def term(self, context: SimpleBB) -> BaseSSA:
+    def term(self, context: SimpleBB) -> SSAValue:
         # term = factor { ("*" | "/") factor}
 
         val = self.factor(context)
@@ -250,7 +271,7 @@ class SmplCompiler:
                 return val
 
     @_nonterminal
-    def expression(self, context: SimpleBB) -> BaseSSA:
+    def expression(self, context: SimpleBB) -> SSAValue:
         # expression = term {("+" | "-") term}
 
         val = self.term(context)
@@ -272,7 +293,7 @@ class SmplCompiler:
                 return val
 
     @_nonterminal
-    def relation(self, context: SimpleBB) -> Tuple[BaseSSA, int]:
+    def relation(self, context: SimpleBB) -> Tuple[SSAValue, int]:
         # relation = expression relOp expression
 
         operand1 = self.expression(context)
@@ -297,24 +318,32 @@ class SmplCompiler:
             Token.LET, f'Expecting keyword "let", found {self.inputSym}')
         self.next()
 
-        dst, id, is_array = self.designator(context, write=True)
+        ret, id, is_array = self.designator(context, write=True)
 
         self._check_token(Token.BECOMES, 'Expecting "<-" after variable name, '
                           f'found {self.inputSym}')
         self.next()
 
-        src = copy.deepcopy(self.expression(context))
+        src = self.expression(context)
 
         if is_array:
-            # TODO: Store value to array
-            pass
+            # Calculate the element address based on the array's address
+            base = context.lookup_value_table(id)
+            assert base is not None
+            address = SSA.Inst(SSA.OP.ADDA, base, ret)
+            context.add_inst(address)
+
+            # Store value to array
+            store = SSA.Inst(SSA.OP.STORE, src, address)
+            store.id = id
+            context.add_inst(store)
+
         else:
             # Update the mapping in the value table
-            src.identifier = id
             context.get_value_table().set(id, src)
 
     @_nonterminal
-    def funcCall(self, context: SimpleBB) -> BaseSSA:
+    def funcCall(self, context: SimpleBB) -> SSAValue:
         # funcCall = "call" ident [ "(" [expression { "," expression } ] ")" ]
 
         self._check_token(Token.CALL, 'Expecting keyword "call" at the '
@@ -539,7 +568,7 @@ class SmplCompiler:
         return superBlock
 
     @_nonterminal
-    def returnStatement(self, context: SimpleBB) -> BaseSSA:
+    def returnStatement(self, context: SimpleBB) -> SSAValue:
         # returnStatement = "return" [ expression ]
 
         self._check_token(Token.RETURN, 'Expecting "return" at the begining of '
@@ -661,7 +690,7 @@ class SmplCompiler:
                             f'typeDecl, found {self.inputSym}')
 
     @_nonterminal
-    def varDecl(self):
+    def varDecl(self, context: SimpleBB):
         # varDecl = typeDecl ident { "," ident } ";"
 
         # Get type
@@ -677,6 +706,13 @@ class SmplCompiler:
             if id in self.variable_types:
                 self.error("Redefinition of variable!", sym)
             self.variable_types[id] = type
+
+            if type.is_array():
+                fp = FramePointer()
+                addr = SSA.Inst(SSA.OP.ADD, fp, Const.get_const(fp.offset))
+                context.add_inst(addr)
+                fp.increment(type.size())
+                context.value_table.set(id, addr)
 
             self.next()
 
@@ -766,8 +802,21 @@ class SmplCompiler:
                           f'of computation, found {self.inputSym}')
         self.next()
 
+        # Create blocks
+        constBlock = SimpleBB()
+        SSA.Const.constBlock = constBlock
+        constBlock.add_inst(FramePointer())
+
+        endBlock = SimpleBB()
+        mainBlock = SuperBlock()
+        mainBlock.name = "main function"
+        constBlock.set_prev(constBlock)  # To itself, meaning the first
+        constBlock.set_next(mainBlock)
+        endBlock.set_prev(mainBlock)
+        endBlock.set_next(endBlock)  # To itself, meaning the last
+
         while self.inputSym.type == Token.VAR or self.inputSym.type == Token.ARR:
-            self.varDecl()
+            self.varDecl(constBlock)
 
         # TODO: Create functions
         while self.inputSym.type == Token.VOID or self.inputSym.type == Token.FUNC:
@@ -777,15 +826,6 @@ class SmplCompiler:
             Token.BEGIN, 'Expecting "{", found ' + f'{self.inputSym}')
         self.next()
         
-        # Create blocks
-        constBlock = SimpleBB()
-        endBlock = SimpleBB()
-        mainBlock = SuperBlock()
-        mainBlock.name = "main function"
-        constBlock.set_prev(constBlock)  # To itself, meaning the first
-        constBlock.set_next(mainBlock)
-        endBlock.set_prev(mainBlock)
-        endBlock.set_next(endBlock)  # To itself, meaning the last
         # Process the statement sequence
         self.statSequence(constBlock, mainBlock)
         mainBlock.set_next(endBlock)
@@ -803,6 +843,3 @@ class SmplCompiler:
         # the main block
         self.computationBlock.head = constBlock
         self.computationBlock.tail = endBlock
-
-        for const_ir in SSA.Const.ALL_CONST:
-            constBlock.add_inst(const_ir)

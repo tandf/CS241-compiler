@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import List
+import math
 
 class VarType:
     dims: List[int]
@@ -18,6 +19,12 @@ class VarType:
     def is_array(self) -> bool:
         return bool(self.dims)
 
+    def size(self) -> int:
+        if self.is_array:
+            return 4 * math.prod(self.dims)
+        else:
+            return 4
+
     def __str__(self) -> str:
         if not self.is_array():
             return "var"
@@ -25,6 +32,7 @@ class VarType:
             s = "array"
             for dim in self.dims:
                 s += f"[{dim}]"
+            return s
 
     def __repr__(self) -> str:
         return self.__str__()

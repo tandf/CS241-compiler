@@ -1,0 +1,15 @@
+main
+	var a, b;
+	array[3][5] c, d;
+	{
+		let a <- 3;
+		let b <- call InputNum();
+		let c[2][4] <- a + b;
+		let c[2][4] <- a + b;
+		let d[1][3] <- a - b;
+		let d[1][3] <- a * b;
+		call OutputNum(c[2][4]);
+		call OutputNum(c[2][4]);
+		call OutputNum(d[1][3]);
+		call OutputNum(d[1][3]);
+	}.
