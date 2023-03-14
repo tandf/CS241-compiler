@@ -26,6 +26,8 @@ class BaseSSA:
     def __init__(self):
         # Unique id for each SSA instruction
         self.id = BaseSSA.CNT
+        # The basic block that this inst belongs to
+        self.bb = None
         # Update class variables
         BaseSSA.CNT += 1
         BaseSSA.ALL_SSA.append(self)
@@ -41,6 +43,9 @@ class BaseSSA:
 
     def __eq__(self, __o: BaseSSA) -> bool:
         return __o and self.get_id() == __o.get_id()
+
+    def __hash__(self) -> int:
+        return self.id
 
 
 class FramePointer(BaseSSA):
@@ -116,14 +121,14 @@ class Const(SSAValue):
         # Find constant value from created constants
         for c in cls.ALL_CONST:
             if c.num == num:
-                return copy.deepcopy(c)
+                return copy.copy(c)
 
         # Create if not found
         const = Const(num)
         # Add to const block
         if cls.constBlock is not None:
             cls.constBlock.add_inst(const)
-        return const
+        return copy.copy(const)
 
 
 class OP(Enum):
@@ -193,8 +198,7 @@ class Inst(SSAValue):
     cs: Inst
     _get_cs_flag: bool
 
-    def __init__(self, op: OP, x: Inst = None, y: Inst = None,
-                 op_last_inst: Inst = None):
+    def __init__(self, op: OP, x: Inst = None, y: Inst = None):
         super().__init__()
         assert x is None or isinstance(x, BaseSSA)
         assert y is None or isinstance(y, BaseSSA)
@@ -203,7 +207,7 @@ class Inst(SSAValue):
         self.x = x
         self.y = y
         # Last SSA instruction with the same op
-        self.op_last_inst = op_last_inst
+        self.op_last_inst = None
         self.cs = None
         self._get_cs_flag = False
 
@@ -236,24 +240,66 @@ class Inst(SSAValue):
             return True
         return False
 
-    def is_cs_kill(self, __o: BaseSSA) -> bool:
-        if not isinstance(__o, Inst):
-            return False
-        if self.op not in OP.MEM_OP or __o.op != OP.STORE:
-            return False
-        return self.identifier == __o.identifier
+    def is_cs_kill(self, __o) -> bool:
+        if isinstance(__o, BaseSSA):
+            if not isinstance(__o, Inst):
+                return False
+            if self.op not in OP.MEM_OP or __o.op != OP.STORE:
+                return False
+            if __o.get_cs():
+                # The instruction will be killed, probably because of another
+                # existing store instruction. Skip this one.
+                return False
+            return self.identifier == __o.identifier
+        elif hasattr(__o, "__iter__"):
+            for ssa in __o:
+                if self.is_cs_kill(ssa):
+                    return True
+        else:
+            raise Exception(f"Can only use is_cs_kill with BaseSSA or a list "
+                            f"of BaseSSA, but received {type(__o)}")
 
     def get_cs(self) -> Inst:
         if not self._get_cs_flag:
+            self.cs = None
             self._get_cs_flag = True
+
+            # Try to find the common subexpression within the same block
             inst = self.op_last_inst
             while inst is not None:
                 if self.is_common_subexpression(inst):
                     self.cs = inst
-                    break
+                    return self.cs
                 if self.is_cs_kill(inst):
-                    break
+                    return None
                 inst = inst.op_last_inst
+
+            # Try to find the common subexpression from previous blocks
+            if self.cs is None:
+                inst = None
+                bb = self.bb
+                assert bb is not None, f"Cannot find basic block for {self}"
+                while True:
+                    # Check the kill store instructions for early kill
+                    if self.op in OP.MEM_OP:
+                        if self.is_cs_kill(bb.killStores):
+                            return None
+
+                    # Move to the next block
+                    bb = bb.get_prev_cs_bb()
+                    if bb is None:
+                        return None
+
+                    # Traverse the linked list for common subexpression
+                    inst = bb.cs_table_get(self.op)
+                    while inst is not None:
+                        if self.is_common_subexpression(inst):
+                            self.cs = inst
+                            return self.cs
+                        if self.is_cs_kill(inst):
+                            return None
+                        inst = inst.op_last_inst
+
         return self.cs
 
     def replace_operand(self, _from: Inst, _from_ident: int, _to: Inst) -> None:

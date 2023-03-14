@@ -1,0 +1,13 @@
+main
+	array[2][2] a;
+	{
+		let a[1][1] <- 0;
+		call OutputNum(a[1][1]);
+		let a[1][1] <- a[1][1] + 1;
+		if a[1][1] > 4 then
+			let a[1][1] <- a[1][1] + 4;
+		else
+			let a[1][1] <- a[1][1] + 2;
+		fi;
+		call OutputNum(a[1][1]);
+	}.

@@ -416,10 +416,12 @@ class SmplCompiler:
         ifBlock.name = "if body"
         relBlock.set_next(ifBlock)
         connectBlock.set_prev(ifBlock)
+
         # Process the statement sequence
         self.statSequence(relBlock, ifBlock)
         ifBlock.set_next(connectBlock)
         changed_variables.update(ifBlock.get_value_table().get_ids())
+        connectBlock.killStores = set(ifBlock.get_stores())
 
         # Branch to if block
         ifBraOp = SSA.OP._from_relop(relop)
@@ -438,6 +440,7 @@ class SmplCompiler:
             self.statSequence(relBlock, elseBlock)
             elseBlock.set_next(connectBlock)
             changed_variables.update(elseBlock.get_value_table().get_ids())
+            connectBlock.killStores = set(elseBlock.get_stores())
 
             # Branch from the end of else block to connect block
             elseJoinBraOp = SSA.Inst(SSA.OP.BRA, BlockFirstSSA(connectBlock))
@@ -492,8 +495,12 @@ class SmplCompiler:
 
         connectBlock = JoinBB()
         relBlock = BranchBB()
-        connectBlock.set_prev(lastBlock)
+        bodyBlock = SuperBlock()
+        bodyBlock.name = "while body"
+        connectBlock.joiningBlock = bodyBlock
         connectBlock.set_next(relBlock)
+        connectBlock.set_prev(lastBlock)
+        relBlock.branchBlock = bodyBlock
         relBlock.set_prev(connectBlock)
         superBlock.head = connectBlock
         superBlock.tail = relBlock
@@ -506,15 +513,12 @@ class SmplCompiler:
         self._check_token(Token.DO, 'Expecting "do" in whileStatement, found '
                           f'{self.inputSym}')
         self.next()
-        # Setting up the context
-        bodyBlock = SuperBlock()
-        bodyBlock.name = "while body"
-        connectBlock.joiningBlock = bodyBlock
-        relBlock.branchBlock = bodyBlock
-        # Process the statement sequence
+
+        # Process while body
         self.statSequence(relBlock, bodyBlock)
         bodyBlock.set_next(connectBlock)
         changed_variables = bodyBlock.get_value_table().get_ids()
+        connectBlock.killStores = set(bodyBlock.get_stores())
 
         self._check_token(Token.OD, 'Expecting "od" at the end of whileStatement, '
                           f'found {self.inputSym}')

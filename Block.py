@@ -41,7 +41,7 @@ class ValueTable:
         return False
 
     def set(self, ident: int, inst: SSA.Inst) -> None:
-        _inst = copy.deepcopy(inst)
+        _inst = copy.copy(inst)
         _inst.identifier = ident
         self.table[ident] = _inst
 
@@ -153,6 +153,10 @@ class Block:
         # return itself. If it's a superblock, return all basic blocks inside.
         raise Exception("Unimplemented!")
 
+    def get_stores(self) -> Set(SSA.Inst):
+        # Return all store instructions
+        raise Exception("Unimplemented!")
+
 
 class BasicBlock(Block):
     value_table: ValueTable
@@ -160,6 +164,7 @@ class BasicBlock(Block):
     cs_table: CSTable
     insts: List[SSA.Inst]
     bbid: int
+    killStores: Set[SSA.Inst]
 
     ALL_BB: List[BasicBlock]
 
@@ -173,6 +178,7 @@ class BasicBlock(Block):
         self.last_cs_block = None
         self.cs_table = CSTable()
         self.insts = []
+        self.killStores = set()
 
         # Unique basic block id
         self.bbid = BasicBlock.CNT
@@ -191,10 +197,10 @@ class BasicBlock(Block):
 
     def get_insts(self, cse: bool = True) -> List[SSA.SSAValue]:
         if cse:
-            return [inst for inst in self.insts
+            return [inst for inst in self._get_all_insts()
                     if not isinstance(inst, SSA.Inst) or inst.get_cs() is None]
         else:
-            return self.insts
+            return self._get_all_insts()
 
     def get_first_inst(self, cse: bool = True) -> SSA.Inst:
         insts = self.get_insts(cse=cse)
@@ -203,40 +209,43 @@ class BasicBlock(Block):
         else:
             return None
 
-    def _update_cs_table(self, inst: SSA.Inst) -> None:
-        # Link the instruction in the cs table
-        op = inst.op
+    def get_stores(self) -> Set(SSA.Inst):
+        return set(i for i in self._get_all_insts()
+                   if isinstance(i, SSA.Inst) and i.op == SSA.OP.STORE)
 
+    def _filter_op(self, op: SSA.OP) -> SSA.OP:
         # Ignore some of the instructions
         if op in CSTable.BLACK_LIST:
-            return
-
+            op = None
         # Store list is merged with the load list to perform kills
         if op == SSA.OP.STORE:
             op = SSA.OP.LOAD
+        return op
 
-        # TODO: kill inst for array operations
+    def cs_table_update(self, inst: SSA.Inst) -> None:
+        # Link the instruction in the cs table
+        op = self._filter_op(inst.op)
+        # Find last inst with the same op in this block
+        if op is not None:
+            inst.op_last_inst = self.cs_table.get(op)
+            self.cs_table.add_inst(inst, op)
 
-        # Find last inst from last_cs_block
-        bb = self
-        op_last_inst = None
-        while bb is not None:
-            op_last_inst = bb.cs_table.get(op)
-            if op_last_inst is not None:
-                break
-            bb = bb.get_prev_cs_bb()
+    def cs_table_get(self, op: SSA.OP) -> SSA.Inst:
+        op = self._filter_op(op)
+        if op is None:
+            return None
+        else:
+            return self.cs_table.get(op)
 
-        inst.op_last_inst = op_last_inst
-        self.cs_table.add_inst(inst, op)
-
-    def add_inst(self, ssa: SSA.SSAValue) -> None:
+    def add_inst(self, ssa: SSA.SSAValue):
         if isinstance(ssa, SSA.Inst):
-            self._update_cs_table(ssa)
+            self.cs_table_update(ssa)
         self.insts.append(ssa)
+        ssa.bb = self
 
     def add_nop(self) -> SSA.Inst:
         nop = SSA.Inst(SSA.OP.NOP)
-        self.insts.append(nop)
+        self.add_inst(nop)
         return nop
 
     def replace_operand(self, _from: SSA.Inst, _from_ident: int,
@@ -244,7 +253,7 @@ class BasicBlock(Block):
         for inst in self.insts:
             inst.replace_operand(_from, _from_ident, _to)
 
-    def get_all_insts(self) -> List[SSA.Inst]:
+    def _get_all_insts(self) -> List[SSA.Inst]:
         return self.insts
 
     def get_bbs(self) -> Set[BasicBlock]:
@@ -310,7 +319,7 @@ class JoinBB(BasicBlock):
                 return self.joiningBlock
         return None
 
-    def get_all_insts(self) -> List[SSA.Inst]:
+    def _get_all_insts(self) -> List[SSA.Inst]:
         return self.phiInsts + self.insts
 
 
@@ -387,6 +396,8 @@ class SuperBlock(Block):
         ret = set()
 
         block = self.head
+        if block is None:
+            return ret
         ret.update(block.get_bbs())
 
         while block != self.tail:
@@ -405,3 +416,9 @@ class SuperBlock(Block):
             ret.update(block.branchBlock.get_bbs())
 
         return ret
+
+    def get_stores(self) -> Set(SSA.Inst):
+        stores = set()
+        for bb in self.get_bbs():
+            stores.update(bb.get_stores())
+        return stores
