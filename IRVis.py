@@ -23,13 +23,13 @@ class IRVis:
 
     def _edge_branch(self, src: BasicBlock, dst: BasicBlock) -> None:
         self._graph.edge(src.dot_name() + ":s", dst.dot_name() + ":n",
-                         label="branch",
+                         #  label="branch",
                          color=IRVis.branch_edge_color,
                          fontcolor=IRVis.branch_edge_color)
 
     def _edge_fallthrough(self, src: BasicBlock, dst: BasicBlock) -> None:
         self._graph.edge(src.dot_name() + ":s", dst.dot_name() + ":n",
-                         label="fall through",
+                         #  label="fall through",
                          color=IRVis.falltrhough_edge_color,
                          fontcolor=IRVis.falltrhough_edge_color)
 

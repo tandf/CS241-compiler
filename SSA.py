@@ -238,6 +238,8 @@ class Inst(SSAValue):
             return True
         elif self.op.is_commutative() and self.x == __o.y and self.y == __o.x:
             return True
+        # TODO: For loads, if one value is stored at the same position, we can
+        # also use it.
         return False
 
     def is_cs_kill(self, __o) -> bool:
