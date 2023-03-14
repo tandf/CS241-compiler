@@ -172,7 +172,8 @@ class SmplCompiler:
             # Compute the offset
             offset = None
             for idx, limit in zip(dims, _type.dims):
-                assert idx.num < limit, "Array index out of bound!"
+                if isinstance(idx, Const):
+                    assert idx.num < limit, "Array index out of bound!"
                 if offset is not None:
                     offset = SSA.Inst(SSA.OP.MUL, offset,
                                       SSA.Const.get_const(limit))
