@@ -1,8 +1,17 @@
 from __future__ import annotations
-from typing import List
+from typing import List, Dict
 import math
 
-class VarType:
+
+class IdentType:
+    def __init__(self) -> None:
+        pass
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
+
+class VarType(IdentType):
     dims: List[int]
 
     _SCALAR = None
@@ -34,11 +43,9 @@ class VarType:
                 s += f"[{dim}]"
             return s
 
-    def __repr__(self) -> str:
-        return self.__str__()
-
     def __eq__(self, __o: object) -> bool:
-        assert(isinstance(__o, VarType))
+        if not isinstance(__o, VarType):
+            return False
 
         # Check if any of these two is scalar
         if self.dims is None:
@@ -50,9 +57,3 @@ class VarType:
             if this != that:
                 return False
         return True
-
-
-class FuncType:
-    # TODO
-    def __init__(self) -> None:
-        pass

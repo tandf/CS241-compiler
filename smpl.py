@@ -32,7 +32,7 @@ def main() -> None:
     vis_file = os.path.join(
         "graph", os.path.splitext(os.path.basename(args.src))[0] + ".dot")
     vis = IRVis(filename=vis_file, debug=args.verbose)
-    vis.block(smplCompiler.computationBlock)
+    smplCompiler.vis(vis)
     vis.render()
 
 

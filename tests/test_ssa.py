@@ -10,7 +10,6 @@ import unittest
 class TestSSA(unittest.TestCase):
     def setUp(self) -> None:
         BaseSSA._init()
-        Const._init()
         return super().setUp()
 
     def test_ssavalue(self):

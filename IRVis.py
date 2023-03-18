@@ -86,8 +86,6 @@ class IRVis:
         elif next is not None:
                 self._edge(b, next)
 
-        # TODO: also draw back edges to make sure everything is correct
-
     def block(self, block: Block) -> None:
         if isinstance(block, SuperBlock):
             for bb in block.get_bbs():

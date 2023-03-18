@@ -48,7 +48,20 @@ class BaseSSA:
         return self.id
 
 
-class FramePointer(BaseSSA):
+class SSAValue(BaseSSA):
+    identifier: int
+
+    def __init__(self):
+        super().__init__()
+        # The corresponding identifier. The same SSA value (SSA id) can map to
+        # multiple identifier, and the same identifier can map to multiple SSA
+        # value (at different time).
+        # This mapping is for changing the SSA value which is required for
+        # inserting phi in while blocks
+        self.identifier = None
+
+
+class FramePointer(SSAValue):
     offset: int
 
     _instance = None
@@ -78,34 +91,10 @@ class FramePointer(BaseSSA):
         return s
 
 
-class SSAValue(BaseSSA):
-    identifier: int
-
-    def __init__(self):
-        super().__init__()
-        # The corresponding identifier. The same SSA value (SSA id) can map to
-        # multiple identifier, and the same identifier can map to multiple SSA
-        # value (at different time).
-        # This mapping is for changing the SSA value which is required for
-        # inserting phi in while blocks
-        self.identifier = None
-
 class Const(SSAValue):
-    ALL_CONST: List[Const]
-
-    # A list of all defined const values
-    ALL_CONST = []
-    constBlock = None
-
-    @classmethod
-    def _init(cls) -> None:
-        # For unit test
-        cls.ALL_CONST = []
-
     def __init__(self, num: int):
         super().__init__()
         self.num = num
-        Const.ALL_CONST.append(self)
 
     def to_str(self, dot_style: bool = False, color: str = "black") -> str:
         s = f'<font color="{color}"><b>{self.get_id()}</b></font>' \
@@ -115,20 +104,6 @@ class Const(SSAValue):
 
     def __str__(self) -> str:
         return self.to_str(dot_style=False)
-
-    @classmethod
-    def get_const(cls, num: int) -> Const:
-        # Find constant value from created constants
-        for c in cls.ALL_CONST:
-            if c.num == num:
-                return copy.copy(c)
-
-        # Create if not found
-        const = Const(num)
-        # Add to const block
-        if cls.constBlock is not None:
-            cls.constBlock.add_inst(const)
-        return copy.copy(const)
 
 
 class OP(Enum):
@@ -159,6 +134,10 @@ class OP(Enum):
 
     # Custom inst
     NOP = auto()
+    # Function call related
+    CALL = auto()
+    ARG = auto()
+    RET = auto()
 
     def __str__(self) -> str:
         return f'{self.name}'.lower()
@@ -188,6 +167,7 @@ OP.COMMUTATIVE_OP = {OP.ADD, OP.MUL}
 OP.IO_OP = {OP.READ, OP.WRITE, OP.WRITENL}
 OP.BRANCH_OP = {OP.BRA, OP.BNE, OP.BEQ, OP.BLE, OP.BLT, OP.BGE, OP.BGT}
 OP.MEM_OP = {OP.LOAD, OP.STORE}
+OP.FUNC_OP = {OP.CALL, OP.ARG, OP.RET}
 
 
 class Inst(SSAValue):
@@ -198,7 +178,7 @@ class Inst(SSAValue):
     cs: Inst
     _get_cs_flag: bool
 
-    def __init__(self, op: OP, x: Inst = None, y: Inst = None):
+    def __init__(self, op: OP, x: BaseSSA = None, y: BaseSSA = None):
         super().__init__()
         assert x is None or isinstance(x, BaseSSA)
         assert y is None or isinstance(y, BaseSSA)
@@ -229,7 +209,7 @@ class Inst(SSAValue):
     def __str__(self) -> str:
         return self.to_str(dot_style=False)
 
-    def is_common_subexpression(self, __o: BaseSSA) -> bool:
+    def is_common_subexpression(self, __o: SSAValue) -> bool:
         if not isinstance(__o, Inst):
             return False
         if self.op != __o.op:
@@ -243,7 +223,7 @@ class Inst(SSAValue):
         return False
 
     def is_cs_kill(self, __o) -> bool:
-        if isinstance(__o, BaseSSA):
+        if isinstance(__o, SSAValue):
             if not isinstance(__o, Inst):
                 return False
             if self.op not in OP.MEM_OP or __o.op != OP.STORE:
@@ -258,8 +238,8 @@ class Inst(SSAValue):
                 if self.is_cs_kill(ssa):
                     return True
         else:
-            raise Exception(f"Can only use is_cs_kill with BaseSSA or a list "
-                            f"of BaseSSA, but received {type(__o)}")
+            raise Exception(f"Can only use is_cs_kill with SSAValue or a list "
+                            f"of SSAValue, but received {type(__o)}")
 
     def get_cs(self) -> Inst:
         if not self._get_cs_flag:
@@ -317,6 +297,42 @@ class Inst(SSAValue):
             return self.get_cs().get_id()
         else:
             return super().get_id()
+
+class CallInst(Inst):
+    func_name: str
+    call_args: List[SSAValue]
+
+    def __init__(self, func_name: str, args: List[SSAValue]):
+        super().__init__(OP.CALL)
+        self.func_name = func_name
+        self.call_args = args
+
+    def to_str(self, dot_style: bool = False, color: str = "black") -> str:
+        s = f'<font color="{color}"><b>{self.get_id(cse=False)}</b></font>' \
+            if dot_style else f"{self.get_id()}"
+        s += f": call {self.func_name}("
+        # Args
+        s += ",".join([str(arg.get_id()) for arg in self.call_args])
+        s += ")"
+        return s
+
+    def __str__(self) -> str:
+        return self.to_str(dot_style=False)
+
+    def is_common_subexpression(self, __o: SSAValue) -> bool:
+        return False
+
+    def is_cs_kill(self, __o) -> bool:
+        return False
+
+    def get_cs(self) -> Inst:
+        return None
+
+    def replace_operand(self, _from: Inst, _from_ident: int, _to: Inst) -> None:
+        return
+
+    def get_id(self, cse: bool = True) -> int:
+        return self.id
 
 
 class MetaSSA(BaseSSA):

@@ -7,7 +7,8 @@ import SSA
 class CSTable:
     table: Dict[SSA.OP, SSA.Inst]
 
-    BLACK_LIST = SSA.OP.IO_OP | SSA.OP.BRANCH_OP | {SSA.OP.PHI}
+    BLACK_LIST = SSA.OP.IO_OP | SSA.OP.BRANCH_OP | SSA.OP.FUNC_OP | \
+        {SSA.OP.PHI}
 
     def __init__(self):
         self.table = {op: None for op in set(SSA.OP) - CSTable.BLACK_LIST}
@@ -101,7 +102,7 @@ class Block:
     def prev_bb(self) -> BasicBlock:
         bb = self._prev_bb()
         assert bb is not None, \
-            "The BasicBlock is not well connected: no prev_bb found!"
+            f"{self} is not well connected: no prev_bb found!"
         if bb == self:
             return None
         else:
@@ -119,7 +120,7 @@ class Block:
     def next_bb(self) -> BasicBlock:
         bb = self._next_bb()
         assert bb is not None, \
-            "The BasicBlock is not well connected: no next_bb found!"
+            f"{self} is not well connected: no next_bb found!"
         if bb == self:
             return None
         else:
@@ -131,7 +132,7 @@ class Block:
 
     def lookup_value_table(self, id: int) -> SSA.SSAValue:
         block = self
-        while True:
+        while block is not None:
             value_table = block.get_value_table()
             if value_table.has(id):
                 return value_table.get(id)

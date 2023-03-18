@@ -1,0 +1,22 @@
+main
+	var a, b;
+	function addInput(x, y);
+	var a;
+	{
+		let a <- call InputNum();
+		return x + a + y;
+	};
+	void function myOutput(y);
+	{
+		call OutputNum(y);
+		return;
+	};
+	void function nop();
+	{
+	};
+	{
+		call nop();
+		let a <- call InputNum();
+		call myOutput(call addInput(a, b));
+		let a <- 3 + 4;
+	}.
