@@ -911,3 +911,9 @@ class SmplCompiler:
         self._check_token(Token.PERIOD, f'Expecting "." at the end of '
                           f'computation, found {self.inputSym}')
         self._next()
+
+        # Regenerate all common subexpressions in the end. Previously some cs
+        # can be falsely generated because the graph is not complete.
+        for inst in SSA.SSAValue.ALL_SSA:
+            if isinstance(inst, SSA.Inst):
+                inst._get_cs_flag = False
